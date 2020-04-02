@@ -90,7 +90,7 @@ class DruidMetadataClient(
       val statement =
         s"""
           |SELECT payload FROM $druidSegmentsTable WHERE datasource = :datasource
-          |AND start >= :start AND end <= :end AND is_published = 1 AND is_overshadowed = 0
+          |AND start >= :start AND end <= :end AND used = 1
         """.stripMargin
       val query = handle.createQuery(statement)
       val result = query

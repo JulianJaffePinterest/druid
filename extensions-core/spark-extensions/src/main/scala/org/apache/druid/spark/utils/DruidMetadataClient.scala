@@ -72,20 +72,12 @@ class DruidMetadataClient(
 
   def getSegmentPayloads(
                            datasource: String,
-                           intervalStart: String,
-                           intervalEnd: String
+                           intervalStart: Option[String],
+                           intervalEnd: Option[String]
                          ): Seq[DataSegment] = {
     val dbi: DBI = connector.getDBI
-    val startTime = if (intervalStart == "") {
-      "1970-01-01T00:00:00.000Z"
-    } else {
-      intervalStart
-    }
-    val endTime = if (intervalEnd == "") {
-      "2100-01-01T00:00:00.000Z"
-    } else {
-      intervalEnd
-    }
+    val startTime = intervalStart.getOrElse("1970-01-01T00:00:00.000Z")
+    val endTime = intervalEnd.getOrElse("2100-01-01T00:00:00.000Z")
     dbi.withHandle((handle: Handle) => {
       val statement =
         s"""

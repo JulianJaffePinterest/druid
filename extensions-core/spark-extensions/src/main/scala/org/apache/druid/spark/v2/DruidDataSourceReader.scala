@@ -124,16 +124,26 @@ class DruidDataSourceReader(
       s"Must set ${DataSourceOptions.TABLE_KEY}!")
 
     // Check filters for any bounds on __time
-    // Otherwise, need to full scan
+    // Otherwise, we'd need to full scan the segments table
+    val (lowerTimeBound, upperTimeBound) = getTimeFilterBounds
+
+    metadataClient.getSegmentPayloads(dataSourceOptions.tableName().get(),
+      lowerTimeBound.map(bound =>
+        DateTimes.utc(bound * 1000).toString("yyyy-MM-ddTHH:mm:ss.SSS'Z'")
+      ),
+      upperTimeBound.map(bound =>
+        DateTimes.utc(bound * 1000).toString("yyyy-MM-ddTHH:mm:ss.SSS'Z'")
+      )
+    )
+  }
+
+  private[v2] def getTimeFilterBounds: (Option[Long], Option[Long]) = {
     val timeFilters = filters
       .filter(_.references.contains("__time"))
       .flatMap(DruidDataSourceReader.decomposeTimeFilters)
       .partition(_._1 == DruidDataSourceReader.LOWER)
-
-    metadataClient.getSegmentPayloads(dataSourceOptions.tableName().get(),
-      DateTimes.utc(timeFilters._1.map(_._2).max * 1000).toString("yyyy-MM-ddTHH:mm:ss.SSS'Z'"),
-      DateTimes.utc(timeFilters._2.map(_._2).min * 1000).toString("yyyy-MM-ddTHH:mm:ss.SSS'Z'")
-    )
+    (timeFilters._1.map(_._2).reduceOption(_ max _ ),
+      timeFilters._2.map(_._2).reduceOption(_ min _ ))
   }
 }
 

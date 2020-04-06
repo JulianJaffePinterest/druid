@@ -22,11 +22,11 @@ package org.apache.druid.spark.v2
 import org.apache.druid.spark.SparkFunSuite
 import org.apache.druid.timeline.DataSegment
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.sources.{Filter, GreaterThan, LessThan, LessThanOrEqual}
 import org.apache.spark.sql.sources.v2.DataSourceOptions
 import org.scalatest.matchers.should.Matchers
 
-import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsJavaMapConverter,
-  seqAsJavaListConverter}
+import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsJavaMapConverter, seqAsJavaListConverter}
 
 class DruidDataSourceReaderSuite extends SparkFunSuite with Matchers
   with DruidDataSourceV2TestUtils {
@@ -56,6 +56,21 @@ class DruidDataSourceReaderSuite extends SparkFunSuite with Matchers
     } shouldBe true
   }
 
-  //TODO
-  //test("getSegments time filter logic")
+  test("getTimeFilterBounds should handle upper and lower bounds") {
+    val expected = (Some(2501L), Some(5000L))
+    val reader = DruidDataSourceReader(schema, DataSourceOptions.empty())
+    val filters = Array[Filter](LessThanOrEqual("__time", 5000L), GreaterThan("__time", 2500L))
+    reader.pushFilters(filters)
+    val actual = reader.getTimeFilterBounds
+    actual should equal(expected)
+  }
+
+  test("getTimeFilterBounds should handle empty or multiple filters for a bound") {
+    val expected = (None, Some(2499L))
+    val reader = DruidDataSourceReader(schema, DataSourceOptions.empty())
+    val filters = Array[Filter](LessThanOrEqual("__time", 5000L), LessThan("__time", 2500L))
+    reader.pushFilters(filters)
+    val actual = reader.getTimeFilterBounds
+    actual should equal(expected)
+  }
 }

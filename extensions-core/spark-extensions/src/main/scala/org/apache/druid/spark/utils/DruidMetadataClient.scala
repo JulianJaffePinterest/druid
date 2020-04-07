@@ -51,7 +51,6 @@ class DruidMetadataClient(
                            base: String = "druid"
                          ) extends Logging {
   private lazy val druidMetadataTableConfig = MetadataStorageTablesConfig.fromBase(base)
-  private lazy val druidSegmentsTable = druidMetadataTableConfig.getSegmentsTable
   private lazy val dbcpProperties = new Properties()
   dbcpProperties.putAll(dbcpMap)
 
@@ -81,8 +80,8 @@ class DruidMetadataClient(
     dbi.withHandle((handle: Handle) => {
       val statement =
         s"""
-          |SELECT payload FROM $druidSegmentsTable WHERE datasource = :datasource
-          |AND start >= :start AND end <= :end AND used = 1
+          |SELECT payload FROM ${druidMetadataTableConfig.getSegmentsTable}
+          |WHERE datasource = :datasource AND start >= :start AND end <= :end AND used = 1
         """.stripMargin
       val query = handle.createQuery(statement)
       val result = query

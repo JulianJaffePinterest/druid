@@ -46,7 +46,7 @@ import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, DoubleType, 
 import org.apache.spark.unsafe.types.UTF8String
 
 import scala.collection.JavaConverters.{collectionAsScalaIterableConverter,
-  iterableAsScalaIterableConverter, seqAsJavaListConverter, setAsJavaSetConverter}
+  iterableAsScalaIterableConverter, seqAsJavaListConverter}
 
 class DruidInputPartitionReader(segment: DataSegment,
                                 schema: StructType,
@@ -61,7 +61,9 @@ class DruidInputPartitionReader(segment: DataSegment,
     new WindowedStorageAdapter(
       new QueryableIndexStorageAdapter(queryableIndex), segment.getInterval
     ),
+    // scalastyle:off null
     if (filters.isEmpty) null else DruidInputPartitionReader.mapFilters(filters),
+    // scalastyle:on
     schema.fieldNames.toList
   )
 
@@ -74,13 +76,13 @@ class DruidInputPartitionReader(segment: DataSegment,
   }
 
   override def close(): Unit = {
-    if (firehose != null) {
+    if (Option(firehose).nonEmpty) {
       firehose.close()
     }
-    if (queryableIndex != null) {
+    if (Option(queryableIndex).nonEmpty) {
       queryableIndex.close()
     }
-    if (tmpDir != null) {
+    if (Option(tmpDir).nonEmpty) {
       FileUtils.deleteDirectory(tmpDir)
     }
   }
@@ -120,10 +122,10 @@ object DruidInputPartitionReader {
                             filter: DimFilter,
                             columns: List[String]): IngestSegmentFirehose = {
     // This could be in-lined into the return, but this is more legible
-    val availableDimensions = adapter.getAdapter.getAvailableDimensions.asScala.toSet.asJava
-    val availableMetrics = adapter.getAdapter.getAvailableMetrics.asScala.toSet.asJava
-    val dimensions = columns.filter(availableDimensions.contains(_)).asJava
-    val metrics = columns.filter(availableMetrics.contains(_)).asJava
+    val availableDimensions = adapter.getAdapter.getAvailableDimensions.asScala.toSet
+    val availableMetrics = adapter.getAdapter.getAvailableMetrics.asScala.toSet
+    val dimensions = columns.filter(availableDimensions.contains).asJava
+    val metrics = columns.filter(availableMetrics.contains).asJava
 
     new IngestSegmentFirehose(List(adapter).asJava, TransformSpec.NONE, dimensions, metrics, filter)
   }
@@ -161,7 +163,9 @@ object DruidInputPartitionReader {
         StringUtils.replaceChar(loadSpec.get("path").toString, ':', "%3A")))
     } else if ("local" == storageType) {
       try {
+        // scalastyle:off null
         new URI("file", null, loadSpec.get("path").toString, null, null)
+        // scalastyle:on
       }
       catch {
         case e: URISyntaxException =>
@@ -176,11 +180,24 @@ object DruidInputPartitionReader {
     }
   }
 
+  /**
+    * Map an array of Spark filters FILTERS to a Druid filter.
+    *
+    * @param filters The spark filters to map to a Druid filter.
+    * @return A Druid filter corresponding to the union of filter conditions enumerated in FILTERS.
+    */
   def mapFilters(filters: Array[Filter]): DimFilter = {
     new AndDimFilter(filters.map(mapFilter).toList.asJava).optimize()
   }
 
+  /**
+    * Convert a Spark-style filter FILTER to a Druid-style filter.
+    *
+    * @param filter The Spark filter to map to a Druid filter.
+    * @return The Druid filter corresponding to the filter condition described by FILTER.
+    */
   def mapFilter(filter: Filter): DimFilter = {
+    // scalastyle:off null
     filter match {
       case And(left, right) =>
         new AndDimFilter(List(mapFilter(left), mapFilter(right)).asJava)
@@ -217,6 +234,7 @@ object DruidInputPartitionReader {
       case GreaterThanOrEqual(field, value) =>
         new BoundDimFilter(field, value.toString, null, false, false, null, null, null, null)
     }
+    // scalastyle:on
   }
 
   /**

@@ -22,8 +22,8 @@ package org.apache.druid.spark.v2
 import org.apache.druid.spark.SparkFunSuite
 import org.apache.druid.timeline.DataSegment
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.sources.{Filter, GreaterThan, LessThan, LessThanOrEqual}
 import org.apache.spark.sql.sources.v2.DataSourceOptions
+import org.apache.spark.sql.sources.{Filter, GreaterThan, LessThan, LessThanOrEqual}
 import org.scalatest.matchers.should.Matchers
 
 import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsJavaMapConverter, seqAsJavaListConverter}

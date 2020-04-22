@@ -24,9 +24,10 @@ import org.apache.druid.data.input.MapBasedInputRow
 import org.apache.druid.spark.SparkFunSuite
 import org.apache.druid.spark.utils.SerializableConfiguration
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.sources.{Filter, GreaterThanOrEqual, LessThan}
-import org.apache.spark.sql.types.{ArrayType, DoubleType, LongType, StringType,
-  StructField, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DoubleType, LongType, StringType, StructField,
+  StructType, TimestampType}
 import org.apache.spark.unsafe.types.UTF8String
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.matchers.should.Matchers
@@ -123,11 +124,11 @@ class DruidInputPartitionReaderSuite extends SparkFunSuite with Matchers with Be
         1L,
         UTF8String.fromString("false"),
         UTF8String.fromString("str"),
-        Seq(UTF8String.fromString("val1"), UTF8String.fromString("val2")),
+        ArrayData.toArrayData(Array(UTF8String.fromString("val1"), UTF8String.fromString("val2"))),
         4.2,
-        Seq(12L, 26L),
+        ArrayData.toArrayData(Seq(12L, 26L)),
         12345,
-        Seq(12L)
+        ArrayData.toArrayData(Seq(12L))
       )
     )
     for (i <- 0 until schema.length) {

@@ -23,6 +23,7 @@ import java.util.Optional
 
 import com.fasterxml.jackson.databind.{InjectableValues, ObjectMapper}
 import org.apache.druid.jackson.DefaultObjectMapper
+import org.apache.druid.java.util.common.ISE
 import org.apache.druid.math.expr.ExprMacroTable
 import org.apache.druid.query.aggregation.datasketches.theta.SketchModule
 import org.apache.druid.query.expression.{LikeExprMacro, RegexpExtractExprMacro,
@@ -56,9 +57,38 @@ class DruidDataSourceV2 extends DataSourceV2 with ReadSupport with WriteSupport
   }
 
   override def createWriter(uuid: String,
-                            structType: StructType,
+                            schema: StructType,
                             saveMode: SaveMode,
-                            dataSourceOptions: DataSourceOptions): Optional[DataSourceWriter] = ???
+                            dataSourceOptions: DataSourceOptions): Optional[DataSourceWriter] = {
+    assert(dataSourceOptions.tableName().isPresent,
+      s"Must set ${DataSourceOptions.TABLE_KEY}!")
+    val dataSource = dataSourceOptions.tableName().get()
+    // TODO: Actually check if the specified data source already exists
+    val dataSourceExists = false
+    saveMode match {
+      case SaveMode.Append => if (dataSourceExists) {
+        throw new UnsupportedOperationException(
+          "Druid does not support appending to existing dataSources, only reindexing!"
+        )
+      } else {
+        createDataSourceWriterOptional(schema, dataSourceOptions)
+      }
+      case SaveMode.ErrorIfExists => throw new ISE(s"$dataSource already exists!")
+      case SaveMode.Ignore => if (dataSourceExists) {
+        Optional.empty[DataSourceWriter]
+      } else {
+        createDataSourceWriterOptional(schema, dataSourceOptions)
+      }
+      case SaveMode.Overwrite => createDataSourceWriterOptional(schema, dataSourceOptions)
+    }
+  }
+
+  private[v2] def createDataSourceWriterOptional(
+                                                  schema: StructType,
+                                                  dataSourceOptions: DataSourceOptions
+                                                ): Optional[DataSourceWriter] = {
+    Optional.of[DataSourceWriter](new DruidDataSourceWriter)
+  }
 }
 
 object DruidDataSourceV2 {

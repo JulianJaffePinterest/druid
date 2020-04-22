@@ -96,7 +96,6 @@ class DruidMetadataClient(
   }
 
   def publishSegments(
-                       knoxKey: String,
                        segments: java.util.List[DataSegment],
                        mapper: ObjectMapper
                      ): Unit = {

@@ -24,8 +24,14 @@ import java.util
 import java.util.{Properties, List => JList}
 
 import com.fasterxml.jackson.core.`type`.TypeReference
-import org.apache.druid.java.util.common.{DateTimes, StringUtils}
-import org.apache.druid.spark.utils.DruidMetadataClient
+import org.apache.druid.guice.BloomFilterSerializersModule
+import org.apache.druid.java.util.common.{DateTimes, Intervals, JodaUtils, StringUtils}
+import org.apache.druid.query.aggregation.datasketches.hll.HllSketchModule
+import org.apache.druid.query.aggregation.datasketches.quantiles.DoublesSketchModule
+import org.apache.druid.query.aggregation.datasketches.theta.SketchModule
+import org.apache.druid.query.aggregation.datasketches.tuple.ArrayOfDoublesSketchModule
+import org.apache.druid.query.aggregation.histogram.FixedBucketsHistogramAggregator
+import org.apache.druid.spark.utils.{DruidClient, DruidDataSourceOptionKeys, DruidMetadataClient}
 import org.apache.druid.timeline.DataSegment
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.sources.{And, EqualNullSafe, EqualTo, Filter, GreaterThan,
@@ -34,7 +40,9 @@ import org.apache.spark.sql.sources.{And, EqualNullSafe, EqualTo, Filter, Greate
 import org.apache.spark.sql.sources.v2.DataSourceOptions
 import org.apache.spark.sql.sources.v2.reader.{DataSourceReader, InputPartition,
   SupportsPushDownFilters, SupportsPushDownRequiredColumns}
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{ArrayType, BinaryType, DoubleType, FloatType, LongType,
+  StringType, StructField, StructType, TimestampType}
+import org.joda.time.Interval
 
 import scala.collection.JavaConverters.{asScalaBufferConverter, seqAsJavaListConverter}
 
@@ -54,13 +62,31 @@ class DruidDataSourceReader(
   with SupportsPushDownRequiredColumns with SupportsPushDownFilters {
   private lazy val metadataClient =
     DruidDataSourceReader.createDruidMetaDataClient(dataSourceOptions)
+  private lazy val druidClient = DruidDataSourceReader.createDruidClient(dataSourceOptions)
+
   private var filters: Array[Filter] = Array.empty
+  private var druidColumnTypes: Option[Set[String]] = Option.empty
 
   override def readSchema(): StructType = {
     if (schema.isDefined) {
       schema.get
     } else {
-      DruidDataSourceReader.getSchema(dataSourceOptions)
+      assert(dataSourceOptions.tableName().isPresent,
+        s"Must set ${DataSourceOptions.TABLE_KEY}!")
+      // TODO: Optionally accept a granularity so that if lowerBound to upperBound spans more than
+      //  twice the granularity duration, we can send a list with two disjoint intervals and
+      //  minimize the load on the broker from having to merge large numbers of segments
+      val (lowerBound, upperBound) = getTimeFilterBounds
+      val columnMap = druidClient.getSchema(
+        dataSourceOptions.tableName().get(),
+        List[Interval](Intervals.utc(
+          lowerBound.getOrElse(JodaUtils.MIN_INSTANT),
+          upperBound.getOrElse(JodaUtils.MAX_INSTANT)
+        ))
+      )
+      schema = Option(DruidDataSourceReader.convertDruidSchemaToSparkSchema(columnMap))
+      druidColumnTypes = Option(columnMap.map(_._2._1).toSet)
+      schema.get
     }
   }
 
@@ -68,8 +94,7 @@ class DruidDataSourceReader(
     // For now, one partition for each Druid segment partition
     // Future improvements can use information from SegmentAnalyzer results to do smart things
     if (schema.isEmpty) {
-      // TODO: Figure out how readSchema is called; can we just always set schema in that method?
-      schema = Option(readSchema())
+      readSchema()
     }
     // TODO: Based on schema, determine if we need to initialize executors with SketchModule.registerSerde()
     // Allow passing hard-coded list of segments to load
@@ -99,7 +124,7 @@ class DruidDataSourceReader(
 
   override def pushedFilters(): Array[Filter] = filters
 
-  private def isSupportedFilter(filter: Filter) = filter match {
+  private def isSupportedFilter(filter: Filter): Boolean = filter match {
     case _: And => true
     case _: Or => true
     case _: Not => true
@@ -129,10 +154,10 @@ class DruidDataSourceReader(
 
     metadataClient.getSegmentPayloads(dataSourceOptions.tableName().get(),
       lowerTimeBound.map(bound =>
-        DateTimes.utc(bound * 1000).toString("yyyy-MM-ddTHH:mm:ss.SSS'Z'")
+        DateTimes.utc(bound).toString("yyyy-MM-ddTHH:mm:ss.SSS'Z'")
       ),
       upperTimeBound.map(bound =>
-        DateTimes.utc(bound * 1000).toString("yyyy-MM-ddTHH:mm:ss.SSS'Z'")
+        DateTimes.utc(bound).toString("yyyy-MM-ddTHH:mm:ss.SSS'Z'")
       )
     )
   }
@@ -155,15 +180,6 @@ object DruidDataSourceReader {
   def apply(dataSourceOptions: DataSourceOptions): DruidDataSourceReader = {
     new DruidDataSourceReader(None, dataSourceOptions)
   }
-
-  val metadataDbTypeKey: String = "metadataDbType"
-  val metadataHostKey: String = "metadataHost"
-  val metadataPortKey: String = "metadataPort"
-  val metadataConnectUriKey: String = "metadataConnectUri"
-  val metadataUserKey: String = "metadataUser"
-  val metadataPasswordKey: String = "metadataPassword"
-  val metadataDbcpPropertiesKey: String = "metadataDbcpProperties"
-  val metadataBaseNameKey: String = "metadataBaseName"
 
   /* Unfortunately, there's no single method of interacting with a Druid cluster that provides all
    * three operations we need: get segment locations, get dataSource schemata, and publish segments.
@@ -200,33 +216,69 @@ object DruidDataSourceReader {
    */
 
   def createDruidMetaDataClient(dataSourceOptions: DataSourceOptions): DruidMetadataClient = {
-    assert(dataSourceOptions.get(metadataDbTypeKey).isPresent,
-      s"Must set $metadataDbTypeKey or provide segments directly!")
+    assert(dataSourceOptions.get(DruidDataSourceOptionKeys.metadataDbTypeKey).isPresent,
+      s"Must set ${DruidDataSourceOptionKeys.metadataDbTypeKey} or provide segments directly!")
     val dbcpProperties = new Properties()
-    if (dataSourceOptions.get(metadataDbcpPropertiesKey).isPresent) {
+    if (dataSourceOptions.get(DruidDataSourceOptionKeys.metadataDbcpPropertiesKey).isPresent) {
       // Assuming that .store was used to serialize the original DbcpPropertiesMap to a string
       dbcpProperties.load(
         new ByteArrayInputStream(
-          StringUtils.toUtf8(dataSourceOptions.get(metadataDbcpPropertiesKey).get())
+          StringUtils.toUtf8(dataSourceOptions
+            .get(DruidDataSourceOptionKeys.metadataDbcpPropertiesKey).get())
         )
       )
     }
     new DruidMetadataClient(
-      dataSourceOptions.get(metadataDbTypeKey).get(),
-      dataSourceOptions.get(metadataHostKey).orElse(""),
-      dataSourceOptions.getInt(metadataPortKey, -1),
-      dataSourceOptions.get(metadataConnectUriKey).orElse(""),
-      dataSourceOptions.get(metadataUserKey).orElse(""),
-      dataSourceOptions.get(metadataPasswordKey).orElse(""),
+      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataDbTypeKey).get(),
+      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataHostKey).orElse("localhost"),
+      dataSourceOptions.getInt(DruidDataSourceOptionKeys.metadataPortKey, -1),
+      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataConnectUriKey).orElse(""),
+      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataUserKey).orElse(""),
+      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataPasswordKey).orElse(""),
       dbcpProperties,
-      dataSourceOptions.get(metadataBaseNameKey).orElse("druid")
+      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataBaseNameKey).orElse("druid")
     )
   }
 
-  // TODO: Move these to DruidClient
-  def getSchema(dataSourceOptions: DataSourceOptions): StructType = {
-    // Read props from dataSourceOptions (e.g. broker or router host and port, etc.)
-    null
+  def createDruidClient(dataSourceOptions: DataSourceOptions): DruidClient = {
+    DruidClient(dataSourceOptions)
+  }
+
+  /**
+    * Convert a COLUMNMAP representing a Druid datasource's schema as returned by
+    * DruidMetadataClient.getClient into a Spark StructType.
+    *
+    * @param columnMap The Druid schema to convert into a corresponding Spark StructType.
+    * @return The StructType equivalent of the Druid schema described by COLUMNMAP.
+    */
+  def convertDruidSchemaToSparkSchema(columnMap: Map[String, (String, Boolean)]): StructType = {
+    StructType.apply(
+      columnMap.map { case (name, (colType, hasMultipleValues)) =>
+        val sparkType = colType match {
+          case "LONG" => LongType
+          case "STRING" => StringType
+          case "DOUBLE" => DoubleType
+          case "FLOAT" => FloatType
+          case "TIMESTAMP" => TimestampType
+          case SketchModule.THETA_SKETCH
+               | HllSketchModule.TYPE_NAME
+               | ArrayOfDoublesSketchModule.ARRAY_OF_DOUBLES_SKETCH
+               | DoublesSketchModule.DOUBLES_SKETCH
+               | BloomFilterSerializersModule.BLOOM_FILTER_TYPE_NAME
+               | "approximateHistogram"
+               | FixedBucketsHistogramAggregator.TYPE_NAME
+               | "variance" =>
+            BinaryType
+          // Add other supported types later
+          case _ => throw new IllegalArgumentException(s"Unrecognized type $colType!")
+        }
+        if (hasMultipleValues) {
+          StructField(name, new ArrayType(sparkType, false))
+        } else {
+          StructField(name, sparkType)
+        }
+      }.toSeq
+    )
   }
 
   private val emptyBoundSeq = Seq.empty[(Bound, Long)]

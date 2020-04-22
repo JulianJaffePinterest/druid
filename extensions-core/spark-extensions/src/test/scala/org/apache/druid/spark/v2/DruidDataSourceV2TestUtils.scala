@@ -1,16 +1,37 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 package org.apache.druid.spark.v2
 
 import java.io.File
 import java.util
 
-import org.apache.druid.java.util.common.Intervals
+import org.apache.druid.java.util.common.{Intervals, StringUtils}
 import org.apache.druid.timeline.DataSegment
 import org.apache.druid.timeline.partition.NumberedShardSpec
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.sources.v2.reader.InputPartitionReader
-import org.apache.spark.sql.types.{ArrayType, DoubleType, FloatType, LongType, StringType, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, BinaryType, DoubleType, FloatType, LongType,
+  StringType, StructField, StructType}
 import org.joda.time.Interval
 
+import scala.collection.JavaConverters.{mapAsJavaMapConverter, seqAsJavaListConverter}
 import scala.collection.mutable.ArrayBuffer
 
 trait DruidDataSourceV2TestUtils {
@@ -67,6 +88,14 @@ trait DruidDataSourceV2TestUtils {
     3409L
   )
 
+  val firstSegmentString: String = DruidDataSourceV2.MAPPER.writeValueAsString(firstSegment)
+  val secondSegmentString: String = DruidDataSourceV2.MAPPER.writeValueAsString(secondSegment)
+  val thirdSegmentString: String = DruidDataSourceV2.MAPPER.writeValueAsString(thirdSegment)
+
+  val idOneSketch: Array[Byte] = StringUtils.decodeBase64String("AQMDAAA6zJNV0wc7TCHDCQ==")
+  val idTwoSketch: Array[Byte] = StringUtils.decodeBase64String("AQMDAAA6zJOppPrHQT61Dw==")
+  val idThreeSketch: Array[Byte] = StringUtils.decodeBase64String("AQMDAAA6zJNHlmybd5/laQ==")
+
   val schema: StructType = StructType(Seq[StructField](
     StructField("__time", LongType),
     StructField("dim1", ArrayType(StringType, false)),
@@ -77,10 +106,12 @@ trait DruidDataSourceV2TestUtils {
     StructField("sum_metric1", LongType),
     StructField("sum_metric2", LongType),
     StructField("sum_metric3", DoubleType),
-    StructField("sum_metric4", FloatType)/*,
-    StructField("uniq_id1", BinaryType)*/ // TODO: Test ThetaSketch as well. Long term add UDT
+    StructField("sum_metric4", FloatType),
+    StructField("uniq_id1", BinaryType)
   ))
 
+  val columnTypes: Option[Set[String]] =
+    Option(Set("LONG", "STRING", "FLOAT", "DOUBLE", "thetaSketch"))
 
   def partitionReaderToSeq(reader: InputPartitionReader[InternalRow]): Seq[InternalRow] = {
     val res = new ArrayBuffer[InternalRow]()

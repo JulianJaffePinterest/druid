@@ -29,7 +29,7 @@ import org.apache.spark.sql.types.StructType
 
 /**
   * Defines a single partition in the dataframe's underlying RDD. This object is generated in the driver and then
-  * serialized to the executors where it is responsible for creating the actual the ([[InputPartitionReader]]) which
+  * serialized to the executors where it is responsible for creating the actual ([[InputPartitionReader]]) which
   * does the actual reading.
   *
   * @param location
@@ -38,15 +38,17 @@ import org.apache.spark.sql.types.StructType
 class DruidInputPartition(
                            segment: DataSegment,
                            schema: StructType,
-                           filters: Array[Filter]
+                           filters: Array[Filter],
+                           columnTypes: Option[Set[String]] = None
                          ) extends InputPartition[InternalRow] {
   // There's probably a better way to do this
   private val session = SparkSession.getActiveSession.get // We're running on the driver, it exists
   private val broadcastConf =
     session.sparkContext.broadcast(
       new SerializableConfiguration(session.sparkContext.hadoopConfiguration))
+  private val serializedSegment: String = DruidDataSourceV2.MAPPER.writeValueAsString(segment)
 
   override def createPartitionReader(): InputPartitionReader[InternalRow] = {
-    new DruidInputPartitionReader(segment, schema, filters, broadcastConf)
+    new DruidInputPartitionReader(serializedSegment, schema, filters, columnTypes, broadcastConf)
   }
 }

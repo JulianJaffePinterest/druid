@@ -24,13 +24,25 @@ import java.net.{URI, URISyntaxException}
 import java.util.{Collection => JCollection}
 
 import com.fasterxml.jackson.core.JsonProcessingException
+import com.fasterxml.jackson.core.`type`.TypeReference
+import org.apache.datasketches.hll.HllSketch
+import org.apache.datasketches.quantiles.DoublesSketch
+import org.apache.datasketches.tuple.ArrayOfDoublesSketch
 import org.apache.druid.data.input.InputRow
+import org.apache.druid.guice.BloomFilterSerializersModule
 import org.apache.druid.java.util.common.{FileUtils, IAE, ISE, StringUtils}
-import org.apache.druid.query.aggregation.datasketches.theta.SketchHolder
+import org.apache.druid.query.aggregation.datasketches.hll.HllSketchModule
+import org.apache.druid.query.aggregation.datasketches.quantiles.DoublesSketchModule
+import org.apache.druid.query.aggregation.datasketches.theta.{SketchHolder, SketchModule}
+import org.apache.druid.query.aggregation.datasketches.tuple.ArrayOfDoublesSketchModule
+import org.apache.druid.query.aggregation.histogram.{ApproximateHistogram,
+  ApproximateHistogramDruidModule, FixedBucketsHistogram, FixedBucketsHistogramAggregator}
+import org.apache.druid.query.aggregation.variance.{VarianceAggregatorCollector, VarianceSerde}
 import org.apache.druid.query.filter.{AndDimFilter, BoundDimFilter, DimFilter, InDimFilter,
   LikeDimFilter, NotDimFilter, OrDimFilter, RegexDimFilter, SelectorDimFilter}
 import org.apache.druid.segment.{QueryableIndex, QueryableIndexStorageAdapter}
 import org.apache.druid.segment.realtime.firehose.{IngestSegmentFirehose, WindowedStorageAdapter}
+import org.apache.druid.segment.serde.ComplexMetrics
 import org.apache.druid.segment.transform.TransformSpec
 import org.apache.druid.spark.utils.{Logging, SerializableConfiguration}
 import org.apache.druid.timeline.DataSegment
@@ -38,6 +50,7 @@ import org.apache.druid.utils.CompressionUtils
 import org.apache.hadoop.fs.Path
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.sources.{And, EqualTo, Filter, GreaterThan, GreaterThanOrEqual, In,
   LessThan, LessThanOrEqual, Not, Or, StringContains, StringEndsWith, StringStartsWith}
 import org.apache.spark.sql.sources.v2.reader.InputPartitionReader
@@ -48,12 +61,49 @@ import org.apache.spark.unsafe.types.UTF8String
 import scala.collection.JavaConverters.{collectionAsScalaIterableConverter,
   iterableAsScalaIterableConverter, seqAsJavaListConverter}
 
-class DruidInputPartitionReader(segment: DataSegment,
+class DruidInputPartitionReader(segmentStr: String,
                                 schema: StructType,
                                 filters: Array[Filter],
+                                columnTypes: Option[Set[String]],
                                 broadcastedConf: Broadcast[SerializableConfiguration])
   extends InputPartitionReader[InternalRow] with Logging {
 
+  if (columnTypes.isDefined) {
+    columnTypes.get.foreach {
+      // TODO: Figure out the reported type strings from Druid of other complex metric types and
+      //  handle registering them here as well
+      case "approximateHistogram" | FixedBucketsHistogramAggregator.TYPE_NAME =>
+        ApproximateHistogramDruidModule.registerSerde()
+      case ArrayOfDoublesSketchModule.ARRAY_OF_DOUBLES_SKETCH =>
+        new ArrayOfDoublesSketchModule().configure(null) // scalastyle:ignore null
+      case BloomFilterSerializersModule.BLOOM_FILTER_TYPE_NAME =>
+        new BloomFilterSerializersModule()
+      case DoublesSketchModule.DOUBLES_SKETCH =>
+        DoublesSketchModule.registerSerde()
+      case HllSketchModule.TYPE_NAME =>
+        HllSketchModule.registerSerde()
+      case SketchModule.THETA_SKETCH =>
+        SketchModule.registerSerde()
+      case "variance" =>
+        ComplexMetrics.registerSerde("variance", new VarianceSerde())
+      case _ => // Simple or unknown metric type, nothing to do
+    }
+  } else {
+    // Schema was set explicitly, it wasn't inferred. For now, initialize a hard-coded set of serdes
+    // TODO: Build a registry system that can supplement schema inferal and replace this hard-coding
+    ApproximateHistogramDruidModule.registerSerde() // Register approximate and fixed histograms
+    // scalastyle:off null
+    new ArrayOfDoublesSketchModule().configure(null) // Register tuple sketches
+    // scalastyle:on
+    new BloomFilterSerializersModule() // Register bloom filters
+    DoublesSketchModule.registerSerde() // Register quantiles sketches
+    HllSketchModule.registerSerde() // Register HLL sketches
+    SketchModule.registerSerde() // Register Thetasketches
+    ComplexMetrics.registerSerde("variance", new VarianceSerde()) // Register variance stats
+  }
+
+  private val segment =
+    DruidDataSourceV2.MAPPER.readValue[DataSegment](segmentStr, new TypeReference[DataSegment] {})
   private val conf = broadcastedConf.value.value
   private val tmpDir: File = FileUtils.createTempDir
   private val queryableIndex: QueryableIndex = loadSegment(segment)
@@ -256,12 +306,12 @@ object DruidInputPartitionReader {
               val baseType = schema(colName).dataType.asInstanceOf[ArrayType].elementType
               col match {
                 case collection: JCollection[_] =>
-                  collection.asScala.map { elem =>
+                  ArrayData.toArrayData(collection.asScala.map { elem =>
                     parseToScala(elem, baseType)
-                  }
+                  })
                 case _ =>
                   // Single-element arrays won't be wrapped when read from Druid; need to do it here
-                  List(parseToScala(col, baseType))
+                  ArrayData.toArrayData(List(parseToScala(col, baseType)))
               }
             case _ =>
               // This is slightly inefficient since some objects will already be the correct type
@@ -308,9 +358,24 @@ object DruidInputPartitionReader {
       }
       case BinaryType =>
         col match {
-          case _: SketchHolder => val s = col.asInstanceOf[SketchHolder]
-            s.getSketch
-            col.asInstanceOf[SketchHolder].getSketch.toByteArray
+          case sketch: SketchHolder =>
+            // TODO: Should we compact?
+            sketch.getSketch.toByteArray
+          // Guessing at how other complex types work, some of these are likely to be wrong
+          case hll: HllSketch =>
+            hll.toCompactByteArray // TODO: No idea is this is right
+          case sketch: DoublesSketch =>
+            sketch.toByteArray
+          case sketch: ArrayOfDoublesSketch =>
+            sketch.toByteArray
+          case histogram: FixedBucketsHistogram =>
+            histogram.toBytes
+          case histogram: ApproximateHistogram =>
+            histogram.toBytes
+          case variance: VarianceAggregatorCollector =>
+            variance.toByteArray
+          case arr: Array[Byte] =>
+            arr
           case _ => throw new IllegalArgumentException(
             s"Unsure how to parse ${col.getClass.toString} into a ByteArray!"
           )

@@ -21,12 +21,12 @@ package org.apache.druid.spark.v2
 
 import org.apache.druid.common.config.NullHandling
 import org.apache.druid.data.input.MapBasedInputRow
-import org.apache.druid.query.aggregation.datasketches.theta.SketchModule
 import org.apache.druid.spark.SparkFunSuite
 import org.apache.druid.spark.utils.SerializableConfiguration
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.sources.{Filter, GreaterThanOrEqual, LessThan}
-import org.apache.spark.sql.types.{ArrayType, DoubleType, LongType, StringType, StructField, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DoubleType, LongType, StringType,
+  StructField, StructType, TimestampType}
 import org.apache.spark.unsafe.types.UTF8String
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.matchers.should.Matchers
@@ -37,13 +37,13 @@ class DruidInputPartitionReaderSuite extends SparkFunSuite with Matchers with Be
   with DruidDataSourceV2TestUtils {
   test("DruidInputPartitionReader should read the specified segment") {
     val expected = Seq(
-      InternalRow.fromSeq(Seq(1577836800000L, List("dim1"), 1, 1, 2, 1, 1, 3, 4.2, 1.7)),
-      InternalRow.fromSeq(Seq(1577836800000L, List("dim2"), 1, 1, 2, 1, 4, 2, 5.1, 8.9))
+      InternalRow.fromSeq(Seq(1577836800000L, List("dim1"), 1, 1, 2, 1, 1, 3, 4.2, 1.7, idOneSketch)),
+      InternalRow.fromSeq(Seq(1577836800000L, List("dim2"), 1, 1, 2, 1, 4, 2, 5.1, 8.9, idOneSketch))
     )
     val conf =
       sparkContext.broadcast(new SerializableConfiguration(sparkContext.hadoopConfiguration))
     val partitionReader =
-      new DruidInputPartitionReader(firstSegment, schema, Array.empty[Filter], conf)
+      new DruidInputPartitionReader(firstSegmentString, schema, Array.empty[Filter], columnTypes, conf)
 
     val actual = partitionReaderToSeq(partitionReader)
 
@@ -54,13 +54,13 @@ class DruidInputPartitionReaderSuite extends SparkFunSuite with Matchers with Be
 
   test("DruidInputPartitionReader should apply filters to string columns") {
     val expected = Seq(
-      InternalRow.fromSeq(Seq(1577836800000L, List("dim1"), 1, 1, 2, 1, 3, 1, 0.2, 0.0))
+      InternalRow.fromSeq(Seq(1577836800000L, List("dim1"), 1, 1, 2, 1, 3, 1, 0.2, 0.0, idOneSketch))
     )
     val conf =
       sparkContext.broadcast(new SerializableConfiguration(sparkContext.hadoopConfiguration))
     val filter = LessThan("dim2", 2)
     val partitionReader =
-      new DruidInputPartitionReader(secondSegment, schema, Array[Filter](filter), conf)
+      new DruidInputPartitionReader(secondSegmentString, schema, Array[Filter](filter), columnTypes, conf)
 
     val actual = partitionReaderToSeq(partitionReader)
 
@@ -71,13 +71,13 @@ class DruidInputPartitionReaderSuite extends SparkFunSuite with Matchers with Be
 
   test("DruidInputPartitionReader should apply filters to numeric columns") {
     val expected = Seq(
-      InternalRow.fromSeq(Seq(1577836800000L, List("dim2"), 2, 1, 2, 1, 1, 5, 8.0, 4.15))
+      InternalRow.fromSeq(Seq(1577836800000L, List("dim2"), 2, 1, 2, 1, 1, 5, 8.0, 4.15, idOneSketch))
     )
     val conf =
       sparkContext.broadcast(new SerializableConfiguration(sparkContext.hadoopConfiguration))
     val filter = GreaterThanOrEqual("sum_metric4", 2)
     val partitionReader =
-      new DruidInputPartitionReader(secondSegment, schema, Array[Filter](filter), conf)
+      new DruidInputPartitionReader(secondSegmentString, schema, Array[Filter](filter), columnTypes, conf)
 
     val actual = partitionReaderToSeq(partitionReader)
 
@@ -136,7 +136,7 @@ class DruidInputPartitionReaderSuite extends SparkFunSuite with Matchers with Be
   }
 
   test("DruidInputPartitionReader.convertInputRowToSparkRow should return null for " +
-    "missing dimentions") {
+    "missing dimensions") {
     val timestamp = 0L
     val dimensions = List[String]("dim1", "dim2", "dim3", "dim4")
     val event = Map[String, Any](
@@ -163,7 +163,7 @@ class DruidInputPartitionReaderSuite extends SparkFunSuite with Matchers with Be
         1L,
         UTF8String.fromString("false"),
         UTF8String.fromString("str"),
-        null
+        null // scalastyle:ignore null
       )
     )
     for (i <- 0 until schema.length) {
@@ -172,7 +172,6 @@ class DruidInputPartitionReaderSuite extends SparkFunSuite with Matchers with Be
   }
 
   override def beforeEach(): Unit = {
-    SketchModule.registerSerde()
     NullHandling.initializeForTests()
     super.beforeEach()
   }

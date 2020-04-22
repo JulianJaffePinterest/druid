@@ -26,19 +26,20 @@ import org.apache.spark.sql.sources.v2.DataSourceOptions
 import org.apache.spark.sql.sources.{Filter, GreaterThan, LessThan, LessThanOrEqual}
 import org.scalatest.matchers.should.Matchers
 
-import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsJavaMapConverter, seqAsJavaListConverter}
+import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsJavaMapConverter,
+  seqAsJavaListConverter}
 
 class DruidDataSourceReaderSuite extends SparkFunSuite with Matchers
   with DruidDataSourceV2TestUtils {
 
   test("DruidDataSourceReader should correctly read directly specified segments") {
     val expected = Seq(
-      InternalRow.fromSeq(Seq(1577836800000L, List("dim1"), 1, 1, 2, 1, 1, 3, 4.2, 1.7)),
-      InternalRow.fromSeq(Seq(1577836800000L, List("dim2"), 1, 1, 2, 1, 4, 2, 5.1, 8.9)),
-      InternalRow.fromSeq(Seq(1577836800000L, List("dim2"), 2, 1, 2, 1, 1, 5, 8.0, 4.15)),
-      InternalRow.fromSeq(Seq(1577836800000L, List("dim1"), 1, 1, 2, 1, 3, 1, 0.2, 0.0)),
-      InternalRow.fromSeq(Seq(1577923200000L, List("dim2"), 3, 2, 1, 1, 1, 7, 0.0, 19.0)),
-      InternalRow.fromSeq(Seq(1577923200000L, List("dim1", "dim3"), 2, 3, 7, 1, 2, 4, 11.17, 3.7))
+      InternalRow.fromSeq(Seq(1577836800000L, List("dim1"), 1, 1, 2, 1, 1, 3, 4.2, 1.7, idOneSketch)),
+      InternalRow.fromSeq(Seq(1577836800000L, List("dim2"), 1, 1, 2, 1, 4, 2, 5.1, 8.9, idOneSketch)),
+      InternalRow.fromSeq(Seq(1577836800000L, List("dim2"), 2, 1, 2, 1, 1, 5, 8.0, 4.15, idOneSketch)),
+      InternalRow.fromSeq(Seq(1577836800000L, List("dim1"), 1, 1, 2, 1, 3, 1, 0.2, 0.0, idOneSketch)),
+      InternalRow.fromSeq(Seq(1577923200000L, List("dim2"), 3, 2, 1, 1, 1, 7, 0.0, 19.0, idTwoSketch)),
+      InternalRow.fromSeq(Seq(1577923200000L, List("dim1", "dim3"), 2, 3, 7, 1, 2, 4, 11.17, 3.7, idThreeSketch))
     )
 
     val segmentsString = DruidDataSourceV2.MAPPER.writeValueAsString(
@@ -72,5 +73,24 @@ class DruidDataSourceReaderSuite extends SparkFunSuite with Matchers
     reader.pushFilters(filters)
     val actual = reader.getTimeFilterBounds
     actual should equal(expected)
+  }
+
+  test("DruidFrameReader.convertDruidSchemaToSparkSchema should convert a Druid schema") {
+    val columnMap = Map[String, (String, Boolean)](
+      "__time" -> ("LONG", false),
+      "dim1" -> ("STRING", true),
+      "dim2" -> ("STRING", false),
+      "id1" -> ("STRING", false),
+      "id2" -> ("STRING", false),
+      "count" -> ("LONG", false),
+      "sum_metric1" -> ("LONG", false),
+      "sum_metric2" -> ("LONG", false),
+      "sum_metric3" -> ("DOUBLE", false),
+      "sum_metric4" -> ("FLOAT", false),
+      "uniq_id1" -> ("thetaSketch", false)
+    )
+
+    val actualSchema = DruidDataSourceReader.convertDruidSchemaToSparkSchema(columnMap)
+    actualSchema.fields should contain theSameElementsAs schema.fields
   }
 }

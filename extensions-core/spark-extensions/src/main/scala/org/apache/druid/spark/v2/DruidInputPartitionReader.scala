@@ -25,25 +25,14 @@ import java.util.{Collection => JCollection}
 
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.core.`type`.TypeReference
-import org.apache.datasketches.hll.HllSketch
-import org.apache.datasketches.quantiles.DoublesSketch
-import org.apache.datasketches.tuple.ArrayOfDoublesSketch
 import org.apache.druid.data.input.InputRow
-import org.apache.druid.guice.BloomFilterSerializersModule
 import org.apache.druid.java.util.common.{FileUtils, IAE, ISE, StringUtils}
-import org.apache.druid.query.aggregation.datasketches.hll.HllSketchModule
-import org.apache.druid.query.aggregation.datasketches.quantiles.DoublesSketchModule
-import org.apache.druid.query.aggregation.datasketches.theta.{SketchHolder, SketchModule}
-import org.apache.druid.query.aggregation.datasketches.tuple.ArrayOfDoublesSketchModule
-import org.apache.druid.query.aggregation.histogram.{ApproximateHistogram,
-  ApproximateHistogramDruidModule, FixedBucketsHistogram, FixedBucketsHistogramAggregator}
-import org.apache.druid.query.aggregation.variance.{VarianceAggregatorCollector, VarianceSerde}
 import org.apache.druid.query.filter.{AndDimFilter, BoundDimFilter, DimFilter, InDimFilter,
   LikeDimFilter, NotDimFilter, OrDimFilter, RegexDimFilter, SelectorDimFilter}
 import org.apache.druid.segment.{QueryableIndex, QueryableIndexStorageAdapter}
 import org.apache.druid.segment.realtime.firehose.{IngestSegmentFirehose, WindowedStorageAdapter}
-import org.apache.druid.segment.serde.ComplexMetrics
 import org.apache.druid.segment.transform.TransformSpec
+import org.apache.druid.spark.registries.ComplexMetricRegistry
 import org.apache.druid.spark.utils.{Logging, SerializableConfiguration}
 import org.apache.druid.timeline.DataSegment
 import org.apache.druid.utils.CompressionUtils
@@ -69,38 +58,14 @@ class DruidInputPartitionReader(segmentStr: String,
   extends InputPartitionReader[InternalRow] with Logging {
 
   if (columnTypes.isDefined) {
+    // Callers will need to explicitly register any complex metrics not known to ComplexMetricRegistry by default
     columnTypes.get.foreach {
-      // TODO: Figure out the reported type strings from Druid of other complex metric types and
-      //  handle registering them here as well
-      case "approximateHistogram" | FixedBucketsHistogramAggregator.TYPE_NAME =>
-        ApproximateHistogramDruidModule.registerSerde()
-      case ArrayOfDoublesSketchModule.ARRAY_OF_DOUBLES_SKETCH =>
-        new ArrayOfDoublesSketchModule().configure(null) // scalastyle:ignore null
-      case BloomFilterSerializersModule.BLOOM_FILTER_TYPE_NAME =>
-        new BloomFilterSerializersModule()
-      case DoublesSketchModule.DOUBLES_SKETCH =>
-        DoublesSketchModule.registerSerde()
-      case HllSketchModule.TYPE_NAME =>
-        HllSketchModule.registerSerde()
-      case SketchModule.THETA_SKETCH =>
-        SketchModule.registerSerde()
-      case "variance" =>
-        ComplexMetrics.registerSerde("variance", new VarianceSerde())
-      case _ => // Simple or unknown metric type, nothing to do
+      ComplexMetricRegistry.registerByName(_)
     }
   } else {
-    // Schema was set explicitly, it wasn't inferred. For now, initialize a hard-coded set of serdes
-    // TODO: Build a registry system that can supplement schema inferal and replace this hard-coding
-    ApproximateHistogramDruidModule.registerSerde() // Register approximate and fixed histograms
-    // scalastyle:off null
-    new ArrayOfDoublesSketchModule().configure(null) // Register tuple sketches
-    // scalastyle:on
-    new BloomFilterSerializersModule() // Register bloom filters
-    DoublesSketchModule.registerSerde() // Register quantiles sketches
-    HllSketchModule.registerSerde() // Register HLL sketches
-    SketchModule.registerSerde() // Register Thetasketches
-    ComplexMetrics.registerSerde("variance", new VarianceSerde()) // Register variance stats
+    ComplexMetricRegistry.initializeDefaults()
   }
+  ComplexMetricRegistry.registerSerdes()
 
   private val segment =
     DruidDataSourceV2.MAPPER.readValue[DataSegment](segmentStr, new TypeReference[DataSegment] {})
@@ -357,28 +322,16 @@ object DruidInputPartitionReader {
         )
       }
       case BinaryType =>
-        col match {
-          case sketch: SketchHolder =>
-            // TODO: Should we compact?
-            sketch.getSketch.toByteArray
-          // Guessing at how other complex types work, some of these are likely to be wrong
-          case hll: HllSketch =>
-            hll.toCompactByteArray // TODO: No idea is this is right
-          case sketch: DoublesSketch =>
-            sketch.toByteArray
-          case sketch: ArrayOfDoublesSketch =>
-            sketch.toByteArray
-          case histogram: FixedBucketsHistogram =>
-            histogram.toBytes
-          case histogram: ApproximateHistogram =>
-            histogram.toBytes
-          case variance: VarianceAggregatorCollector =>
-            variance.toByteArray
-          case arr: Array[Byte] =>
-            arr
-          case _ => throw new IllegalArgumentException(
-            s"Unsure how to parse ${col.getClass.toString} into a ByteArray!"
-          )
+        if (ComplexMetricRegistry.getRegisteredSerializedClasses.contains(col.getClass)) {
+          ComplexMetricRegistry.deserialize(col)
+        } else {
+          col match {
+            case arr: Array[Byte] =>
+              arr
+            case _ => throw new IllegalArgumentException(
+              s"Unsure how to parse ${col.getClass.toString} into a ByteArray!"
+            )
+          }
         }
       case _ => throw new IllegalArgumentException(
         s"$dt currently unsupported!"

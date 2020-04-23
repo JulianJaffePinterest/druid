@@ -24,13 +24,8 @@ import java.util
 import java.util.{Properties, List => JList}
 
 import com.fasterxml.jackson.core.`type`.TypeReference
-import org.apache.druid.guice.BloomFilterSerializersModule
 import org.apache.druid.java.util.common.{DateTimes, Intervals, JodaUtils, StringUtils}
-import org.apache.druid.query.aggregation.datasketches.hll.HllSketchModule
-import org.apache.druid.query.aggregation.datasketches.quantiles.DoublesSketchModule
-import org.apache.druid.query.aggregation.datasketches.theta.SketchModule
-import org.apache.druid.query.aggregation.datasketches.tuple.ArrayOfDoublesSketchModule
-import org.apache.druid.query.aggregation.histogram.FixedBucketsHistogramAggregator
+import org.apache.druid.spark.registries.ComplexMetricRegistry
 import org.apache.druid.spark.utils.{DruidClient, DruidDataSourceOptionKeys, DruidMetadataClient}
 import org.apache.druid.timeline.DataSegment
 import org.apache.spark.sql.catalyst.InternalRow
@@ -96,7 +91,6 @@ class DruidDataSourceReader(
     if (schema.isEmpty) {
       readSchema()
     }
-    // TODO: Based on schema, determine if we need to initialize executors with SketchModule.registerSerde()
     // Allow passing hard-coded list of segments to load
     if (dataSourceOptions.get("segments").isPresent) {
       val segments: JList[DataSegment] = DruidDataSourceV2.MAPPER.readValue(
@@ -260,14 +254,8 @@ object DruidDataSourceReader {
           case "DOUBLE" => DoubleType
           case "FLOAT" => FloatType
           case "TIMESTAMP" => TimestampType
-          case SketchModule.THETA_SKETCH
-               | HllSketchModule.TYPE_NAME
-               | ArrayOfDoublesSketchModule.ARRAY_OF_DOUBLES_SKETCH
-               | DoublesSketchModule.DOUBLES_SKETCH
-               | BloomFilterSerializersModule.BLOOM_FILTER_TYPE_NAME
-               | "approximateHistogram"
-               | FixedBucketsHistogramAggregator.TYPE_NAME
-               | "variance" =>
+          case complexType
+            if ComplexMetricRegistry.getRegisteredMetricNames.contains(complexType) =>
             BinaryType
           // Add other supported types later
           case _ => throw new IllegalArgumentException(s"Unrecognized type $colType!")

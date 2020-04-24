@@ -35,9 +35,8 @@ import org.apache.druid.segment.incremental.{IncrementalIndex, IncrementalIndexS
 import org.apache.druid.segment.indexing.DataSchema
 import org.apache.druid.segment.loading.DataSegmentPusher
 import org.apache.druid.segment.writeout.OnHeapMemorySegmentWriteOutMediumFactory
+import org.apache.druid.spark.registries.ShardSpecRegistry
 import org.apache.druid.timeline.DataSegment
-import org.apache.druid.timeline.partition.{HashBasedNumberedShardSpec, LinearShardSpec,
-  NumberedShardSpec}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.sources.v2.writer.{DataWriter, WriterCommitMessage}
 import org.apache.spark.sql.types.StructType
@@ -59,7 +58,8 @@ class DruidDataWriter(
                        rollup: Boolean,
                        rowsPerPersist: Int,
                        rowsPerSegment: Long,
-                       version: Option[String] = None
+                       version: Option[String] = None,
+                       partitionDimensions: Option[List[String]] = None
                      ) extends DataWriter[InternalRow] {
   private val tmpPersistDir = Files.createTempDirectory("persist").toFile
   private val tmpMergeDir = Files.createTempDirectory("merge").toFile
@@ -178,18 +178,11 @@ class DruidDataWriter(
         .foldLeft(Set[String]())(_ ++ _.asScala)
         .toList
         .asJava
-      val shardSpec = shardSpecSerialized match {
-        // TODO: Support additional shard specs
-        case "hashed" =>
-          new HashBasedNumberedShardSpec(partitionId,
-            partitionsCount,
-            null, // TODO: This should be passed in
-            DruidDataSourceV2.MAPPER)
-        case "linear" => new LinearShardSpec(partitionId)
-        case "numbered" => new NumberedShardSpec(partitionId, partitionsCount)
-        case _ =>
-          throw new IllegalArgumentException("Unrecognized shard spec type " + shardSpecSerialized + "!")
-      }
+      val shardSpec = ShardSpecRegistry.createShardSpec(
+        shardSpecSerialized,
+        partitionId,
+        partitionsCount,
+        partitionDimensions)
       val dataSegmentTemplate = new DataSegment(
         dataSource,
         segmentInterval,

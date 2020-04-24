@@ -39,7 +39,8 @@ class DruidInputPartition(
                            segment: DataSegment,
                            schema: StructType,
                            filters: Array[Filter],
-                           columnTypes: Option[Set[String]] = None
+                           columnTypes: Option[Set[String]] = None,
+                           useCompactSketches: Boolean = false
                          ) extends InputPartition[InternalRow] {
   // There's probably a better way to do this
   private val session = SparkSession.getActiveSession.get // We're running on the driver, it exists

@@ -34,10 +34,8 @@ import org.apache.druid.segment.serde.ComplexMetrics
 import org.apache.druid.spark.utils.Logging
 
 import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 
 object ComplexMetricRegistry extends Logging {
-  private val registeredMetricNames: ArrayBuffer[String] = ArrayBuffer.empty[String]
   private val registeredSerdeFunctions: mutable.HashMap[String, () => Unit] = new mutable.HashMap()
   private val registeredDeserializeFunctions: mutable.HashMap[Class[_], Any => Array[Byte]] =
     new mutable.HashMap()
@@ -53,7 +51,6 @@ object ComplexMetricRegistry extends Logging {
                 name: String,
                 registerSerdeFunc: () => Unit
               ): Unit = {
-    registeredMetricNames += name
     registeredSerdeFunctions(name) = registerSerdeFunc
   }
 
@@ -70,7 +67,6 @@ object ComplexMetricRegistry extends Logging {
                 registerSerdeFunc: () => Unit,
                 serializedClass: Class[_],
                 deserializeFunc: Any => Array[Byte]): Unit = {
-    registeredMetricNames += name
     registeredSerdeFunctions(name) = registerSerdeFunc
     registeredDeserializeFunctions(serializedClass) = deserializeFunc
   }
@@ -82,8 +78,8 @@ object ComplexMetricRegistry extends Logging {
     * @param shouldCompact
     */
   def registerByName(name: String, shouldCompact: Boolean = false): Unit = {
-    if (knownMetrics.contains(name)) {
-      knownMetrics(name).apply(shouldCompact)
+    if (!registeredSerdeFunctions.contains(name) && knownMetrics.contains(name)) {
+      knownMetrics(name)(shouldCompact)
     }
   }
 

@@ -30,4 +30,5 @@ object DruidDataSourceOptionKeys {
   val metadataBaseNameKey: String = "metadataBaseName"
   val brokerHostKey: String = "brokerHost"
   val brokerPortKey: String = "brokerKey"
+  val useCompactSketchesKey: String = "useCompactSketches"
 }

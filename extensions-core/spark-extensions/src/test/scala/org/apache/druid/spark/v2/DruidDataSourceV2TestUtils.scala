@@ -93,8 +93,8 @@ trait DruidDataSourceV2TestUtils {
   val thirdSegmentString: String = DruidDataSourceV2.MAPPER.writeValueAsString(thirdSegment)
 
   val idOneSketch: Array[Byte] = StringUtils.decodeBase64String("AQMDAAA6zJNV0wc7TCHDCQ==")
-  val idTwoSketch: Array[Byte] = StringUtils.decodeBase64String("AQMDAAA6zJOppPrHQT61Dw==")
-  val idThreeSketch: Array[Byte] = StringUtils.decodeBase64String("AQMDAAA6zJNHlmybd5/laQ==")
+  val idTwoSketch: Array[Byte] = StringUtils.decodeBase64String("AQMDAAA6zJNHlmybd5/laQ==")
+  val idThreeSketch: Array[Byte] = StringUtils.decodeBase64String("AQMDAAA6zJOppPrHQT61Dw==")
 
   val schema: StructType = StructType(Seq[StructField](
     StructField("__time", LongType),

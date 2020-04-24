@@ -20,19 +20,18 @@
 package org.apache.druid.spark.v2
 
 import java.io.{File, IOException}
-import java.net.{URI, URISyntaxException}
+import java.net.URI
 import java.util.{Collection => JCollection}
 
-import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.core.`type`.TypeReference
 import org.apache.druid.data.input.InputRow
-import org.apache.druid.java.util.common.{FileUtils, IAE, ISE, StringUtils}
+import org.apache.druid.java.util.common.{FileUtils, ISE, StringUtils}
 import org.apache.druid.query.filter.{AndDimFilter, BoundDimFilter, DimFilter, InDimFilter,
   LikeDimFilter, NotDimFilter, OrDimFilter, RegexDimFilter, SelectorDimFilter}
 import org.apache.druid.segment.{QueryableIndex, QueryableIndexStorageAdapter}
 import org.apache.druid.segment.realtime.firehose.{IngestSegmentFirehose, WindowedStorageAdapter}
 import org.apache.druid.segment.transform.TransformSpec
-import org.apache.druid.spark.registries.ComplexMetricRegistry
+import org.apache.druid.spark.registries.{ComplexMetricRegistry, SegmentReaderRegistry}
 import org.apache.druid.spark.utils.{Logging, SerializableConfiguration}
 import org.apache.druid.timeline.DataSegment
 import org.apache.druid.utils.CompressionUtils
@@ -54,13 +53,15 @@ class DruidInputPartitionReader(segmentStr: String,
                                 schema: StructType,
                                 filters: Array[Filter],
                                 columnTypes: Option[Set[String]],
-                                broadcastedConf: Broadcast[SerializableConfiguration])
+                                broadcastedConf: Broadcast[SerializableConfiguration],
+                                useCompactSketches: Boolean = false
+                               )
   extends InputPartitionReader[InternalRow] with Logging {
 
   if (columnTypes.isDefined) {
     // Callers will need to explicitly register any complex metrics not known to ComplexMetricRegistry by default
     columnTypes.get.foreach {
-      ComplexMetricRegistry.registerByName(_)
+      ComplexMetricRegistry.registerByName(_, useCompactSketches)
     }
   } else {
     ComplexMetricRegistry.initializeDefaults()
@@ -103,7 +104,7 @@ class DruidInputPartitionReader(segmentStr: String,
   }
 
   private def loadSegment(segment: DataSegment): QueryableIndex = {
-    val path = new Path(DruidInputPartitionReader.getURIFromSegment(segment))
+    val path = new Path(SegmentReaderRegistry.load(segment.getLoadSpec))
     val segmentDir = new File(tmpDir, segment.getId.toString)
     if (!segmentDir.exists) {
       logInfo(
@@ -143,56 +144,6 @@ object DruidInputPartitionReader {
     val metrics = columns.filter(availableMetrics.contains).asJava
 
     new IngestSegmentFirehose(List(adapter).asJava, TransformSpec.NONE, dimensions, metrics, filter)
-  }
-
-  /**
-    * Copying from org.apache.druid.indexer.JobHelper to avoid depending on indexing-hadoop
-    *
-    * @param dataSegment
-    * @return
-    */
-  def getURIFromSegment(dataSegment: DataSegment): URI = {
-    // There is no good way around this...
-    // TODO: add getURI() to URIDataPuller
-    val loadSpec = dataSegment.getLoadSpec
-    val storageType = loadSpec.get("type").toString
-    if ("s3_zip" == storageType) {
-      if ("s3a" == loadSpec.get("S3Schema")) {
-        URI.create(StringUtils.format("s3a://%s/%s", loadSpec.get("bucket"),
-          loadSpec.get("key")))
-      } else {
-        URI.create(StringUtils.format("s3n://%s/%s", loadSpec.get("bucket"),
-          loadSpec.get("key")))
-      }
-    } else if ("hdfs" == storageType) {
-      URI.create(loadSpec.get("path").toString)
-    } else if ("google" == storageType) {
-      // Segment names contain : in their path.
-      // Google Cloud Storage supports : but Hadoop does not.
-      // This becomes an issue when re-indexing using the current segments.
-      // The Hadoop getSplits code doesn't understand the : and returns "Relative path in absolute URI"
-      // This could be fixed using the same code that generates path names for hdfs segments using
-      // getHdfsStorageDir. But that wouldn't fix this issue for people who already have segments with ":".
-      // Because of this we just URL encode the : making everything work as it should.
-      URI.create(StringUtils.format("gs://%s/%s", loadSpec.get("bucket"),
-        StringUtils.replaceChar(loadSpec.get("path").toString, ':', "%3A")))
-    } else if ("local" == storageType) {
-      try {
-        // scalastyle:off null
-        new URI("file", null, loadSpec.get("path").toString, null, null)
-        // scalastyle:on
-      }
-      catch {
-        case e: URISyntaxException =>
-          throw new ISE(e, "Unable to form simple file uri")
-      }
-    } else try {
-      throw new IAE("Cannot figure out loadSpec %s",
-        DruidDataSourceV2.MAPPER.writeValueAsString(loadSpec))
-    } catch {
-      case e: JsonProcessingException =>
-        throw new ISE("Cannot write Map with json mapper")
-    }
   }
 
   /**

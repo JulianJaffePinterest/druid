@@ -27,7 +27,7 @@ import org.scalatest.matchers.should.Matchers
 class DruidInputPartitionSuite extends SparkFunSuite with Matchers with DruidDataSourceV2TestUtils {
   test("DruidInputPartition should correctly serialize tasks") {
     val reader =
-      new DruidInputPartition(firstSegment, schema, Array.empty[Filter]).createPartitionReader()
+      new DruidInputPartition(firstSegment, schema, Array.empty[Filter], None).createPartitionReader()
     reader.next() shouldBe true
     reader.close()
   }

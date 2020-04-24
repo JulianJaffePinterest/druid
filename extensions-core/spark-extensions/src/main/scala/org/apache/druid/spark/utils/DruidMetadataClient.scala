@@ -25,18 +25,12 @@ import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.base.Suppliers
 import org.apache.druid.indexer.SQLMetadataStorageUpdaterJobHandler
-import org.apache.druid.java.util.common.StringUtils
-import org.apache.druid.metadata.storage.derby.{DerbyConnector, DerbyMetadataStorage}
-import org.apache.druid.metadata.storage.mysql.{MySQLConnector, MySQLConnectorConfig}
-import org.apache.druid.metadata.storage.postgresql.{PostgreSQLConnector, PostgreSQLConnectorConfig,
-  PostgreSQLTablesConfig}
+import org.apache.druid.spark.registries.SQLConnectorRegistry
 import org.apache.druid.spark.v2.DruidDataSourceV2
 import org.apache.druid.timeline.DataSegment
 import org.skife.jdbi.v2.{DBI, Handle}
-// import org.apache.druid.metadata.storage.sqlserver.SQLServerConnector
 import org.apache.druid.metadata.{MetadataStorageConnectorConfig, MetadataStorageTablesConfig,
   SQLMetadataConnector}
-import org.apache.spark.SparkException
 
 import scala.collection.JavaConverters.asScalaBufferConverter
 
@@ -111,21 +105,7 @@ class DruidMetadataClient(
     * @return
     */
   private def buildSQLConnector(): SQLMetadataConnector = {
-    StringUtils.toLowerCase(metadataDbType) match {
-      case "mysql" =>
-        new MySQLConnector(connectorConfigSupplier, metadataTableConfigSupplier,
-          new MySQLConnectorConfig())
-      case "postgres" | "postrgesql" =>
-        new PostgreSQLConnector(connectorConfigSupplier, metadataTableConfigSupplier,
-          new PostgreSQLConnectorConfig(), new PostgreSQLTablesConfig())
-      /* Uncomment to support SQLServer metadata instances
-      case "sqlserver" =>
-        new SQLServerConnector(connectorConfigSupplier, metadataTableConfigSupplier)*/
-      case "derby" =>
-        new DerbyConnector(new DerbyMetadataStorage(connectorConfig), connectorConfigSupplier,
-          metadataTableConfigSupplier)
-      case _ => throw new SparkException(s"Unrecognized metadataDBType $metadataDbType!")
-    }
+    SQLConnectorRegistry.create(metadataDbType, connectorConfigSupplier, metadataTableConfigSupplier)
   }
 
 }

@@ -91,16 +91,34 @@ class DruidDataSourceReader(
     if (schema.isEmpty) {
       readSchema()
     }
+    val useCompactSketches =
+      dataSourceOptions.get(DruidDataSourceOptionKeys.useCompactSketchesKey).isPresent
     // Allow passing hard-coded list of segments to load
     if (dataSourceOptions.get("segments").isPresent) {
       val segments: JList[DataSegment] = DruidDataSourceV2.MAPPER.readValue(
         dataSourceOptions.get("segments").get(),
         new TypeReference[JList[DataSegment]]() {})
       segments.asScala
-        .map(new DruidInputPartition(_, schema.get, filters): InputPartition[InternalRow]).asJava
+        .map(
+          new DruidInputPartition(
+            _,
+            schema.get,
+            filters,
+            druidColumnTypes,
+            useCompactSketches
+          ): InputPartition[InternalRow]
+        ).asJava
     } else {
       getSegments
-        .map(new DruidInputPartition(_, schema.get, filters): InputPartition[InternalRow]).asJava
+        .map(
+          new DruidInputPartition(
+            _,
+            schema.get,
+            filters,
+            druidColumnTypes,
+            useCompactSketches
+          ): InputPartition[InternalRow]
+        ).asJava
     }
   }
 

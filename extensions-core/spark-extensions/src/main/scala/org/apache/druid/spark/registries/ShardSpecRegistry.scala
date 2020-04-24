@@ -34,7 +34,7 @@ object ShardSpecRegistry extends Logging {
 
   def register(
                 shardSpecType: String,
-               shardSpecCreationFunc: (Int, Int, Option[List[String]]) => ShardSpec
+                shardSpecCreationFunc: (Int, Int, Option[List[String]]) => ShardSpec
               ): Unit = {
     registeredShardSpecCreationFunctions(shardSpecType) = shardSpecCreationFunc
   }

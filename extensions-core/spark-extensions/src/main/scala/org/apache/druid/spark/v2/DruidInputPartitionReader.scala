@@ -20,7 +20,6 @@
 package org.apache.druid.spark.v2
 
 import java.io.{File, IOException}
-import java.net.URI
 import java.util.{Collection => JCollection}
 
 import com.fasterxml.jackson.core.`type`.TypeReference

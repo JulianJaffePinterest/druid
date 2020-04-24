@@ -109,13 +109,30 @@
             <version>${project.parent.version}</version>
             <scope>provided</scope>
         </dependency>
-        <!-- Uncomment to allow interacting with SQLServer metadata instances
         <dependency>
-            <groupId>org.apache.druid.extensions.contrib</groupId>
-            <artifactId>sqlserver-metadata-storage</artifactId>
+            <groupId>org.apache.druid.extensions</groupId>
+            <artifactId>druid-azure-extensions</artifactId>
             <version>${project.parent.version}</version>
             <scope>provided</scope>
-        </dependency> -->
+        </dependency>
+        <dependency>
+            <groupId>org.apache.druid.extensions</groupId>
+            <artifactId>druid-google-extensions</artifactId>
+            <version>${project.parent.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.druid.extensions</groupId>
+            <artifactId>druid-hdfs-storage</artifactId>
+            <version>${project.parent.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.druid.extensions</groupId>
+            <artifactId>druid-s3-extensions</artifactId>
+            <version>${project.parent.version}</version>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>commons-io</groupId>
             <artifactId>commons-io</artifactId>

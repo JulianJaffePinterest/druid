@@ -20,6 +20,7 @@
 package org.apache.druid.spark.utils
 
 object DruidDataSourceOptionKeys {
+  // Metadata Client Configs
   val metadataDbTypeKey: String = "metadataDbType"
   val metadataHostKey: String = "metadataHost"
   val metadataPortKey: String = "metadataPort"
@@ -28,7 +29,15 @@ object DruidDataSourceOptionKeys {
   val metadataPasswordKey: String = "metadataPassword"
   val metadataDbcpPropertiesKey: String = "metadataDbcpProperties"
   val metadataBaseNameKey: String = "metadataBaseName"
+
+  // Druid Client Configs
   val brokerHostKey: String = "brokerHost"
   val brokerPortKey: String = "brokerKey"
+
+  // Reader Configs
   val useCompactSketchesKey: String = "useCompactSketches"
+
+  // Writer Configs
+  val deepStorageTypeKey: String = "deepStorageType"
+  val rollUpSegmentsKey: String = "rollUpSegments"
 }

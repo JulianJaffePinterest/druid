@@ -19,12 +19,11 @@
 
 package org.apache.druid.spark.v2
 
-import java.io.ByteArrayInputStream
 import java.util
-import java.util.{Properties, List => JList}
+import java.util.{List => JList}
 
 import com.fasterxml.jackson.core.`type`.TypeReference
-import org.apache.druid.java.util.common.{DateTimes, Intervals, JodaUtils, StringUtils}
+import org.apache.druid.java.util.common.{DateTimes, Intervals, JodaUtils}
 import org.apache.druid.spark.registries.ComplexMetricRegistry
 import org.apache.druid.spark.utils.{DruidClient, DruidDataSourceOptionKeys, DruidMetadataClient}
 import org.apache.druid.timeline.DataSegment
@@ -228,28 +227,7 @@ object DruidDataSourceReader {
    */
 
   def createDruidMetaDataClient(dataSourceOptions: DataSourceOptions): DruidMetadataClient = {
-    assert(dataSourceOptions.get(DruidDataSourceOptionKeys.metadataDbTypeKey).isPresent,
-      s"Must set ${DruidDataSourceOptionKeys.metadataDbTypeKey} or provide segments directly!")
-    val dbcpProperties = new Properties()
-    if (dataSourceOptions.get(DruidDataSourceOptionKeys.metadataDbcpPropertiesKey).isPresent) {
-      // Assuming that .store was used to serialize the original DbcpPropertiesMap to a string
-      dbcpProperties.load(
-        new ByteArrayInputStream(
-          StringUtils.toUtf8(dataSourceOptions
-            .get(DruidDataSourceOptionKeys.metadataDbcpPropertiesKey).get())
-        )
-      )
-    }
-    new DruidMetadataClient(
-      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataDbTypeKey).get(),
-      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataHostKey).orElse("localhost"),
-      dataSourceOptions.getInt(DruidDataSourceOptionKeys.metadataPortKey, -1),
-      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataConnectUriKey).orElse(""),
-      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataUserKey).orElse(""),
-      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataPasswordKey).orElse(""),
-      dbcpProperties,
-      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataBaseNameKey).orElse("druid")
-    )
+    DruidMetadataClient(dataSourceOptions)
   }
 
   def createDruidClient(dataSourceOptions: DataSourceOptions): DruidClient = {

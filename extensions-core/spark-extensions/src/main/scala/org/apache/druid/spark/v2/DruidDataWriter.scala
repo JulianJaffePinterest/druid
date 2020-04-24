@@ -35,32 +35,17 @@ import org.apache.druid.segment.incremental.{IncrementalIndex, IncrementalIndexS
 import org.apache.druid.segment.indexing.DataSchema
 import org.apache.druid.segment.loading.DataSegmentPusher
 import org.apache.druid.segment.writeout.OnHeapMemorySegmentWriteOutMediumFactory
-import org.apache.druid.spark.registries.ShardSpecRegistry
+import org.apache.druid.spark.registries.{SegmentWriterRegistry, ShardSpecRegistry}
+import org.apache.druid.spark.utils.DruidDataWriterConfig
 import org.apache.druid.timeline.DataSegment
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.sources.v2.writer.{DataWriter, WriterCommitMessage}
-import org.apache.spark.sql.types.StructType
-import org.joda.time.chrono.ISOChronology
-import org.joda.time.{DateTime, Interval}
 
 import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsJavaMapConverter,
   seqAsJavaListConverter}
 import scala.collection.mutable.ArrayBuffer
 
-class DruidDataWriter(
-                       dataSource: String,
-                       partitionId: Int,
-                       partitionsCount: Int,
-                       schema: StructType,
-                       dataSchemaSerialized: String,
-                       segmentInterval: Interval,
-                       shardSpecSerialized: String,
-                       rollup: Boolean,
-                       rowsPerPersist: Int,
-                       rowsPerSegment: Long,
-                       version: Option[String] = None,
-                       partitionDimensions: Option[List[String]] = None
-                     ) extends DataWriter[InternalRow] {
+class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[InternalRow] {
   private val tmpPersistDir = Files.createTempDirectory("persist").toFile
   private val tmpMergeDir = Files.createTempDirectory("merge").toFile
   private val closer = Closer.create()
@@ -74,21 +59,22 @@ class DruidDataWriter(
   )
 
   private val dataSchema: DataSchema =
-    DruidDataSourceV2.MAPPER.readValue[DataSchema](dataSchemaSerialized,
+    DruidDataSourceV2.MAPPER.readValue[DataSchema](config.dataSchemaSerialized,
       new TypeReference[DataSchema] {})
   private val dimensions: JList[String] =
     dataSchema.getDimensionsSpec.getDimensions.asScala.map(_.getName).asJava
   private val tsColumn: String = dataSchema.getTimestampSpec.getTimestampColumn
-  private val tsColumnIndex = schema.indexOf(tsColumn)
+  private val tsColumnIndex = config.schema.indexOf(tsColumn)
   private val timestampParser = TimestampParser
     .createNumericTimestampParser(dataSchema.getTimestampSpec.getTimestampFormat)
 
-  private val finalVersion = version.getOrElse(DateTime.now(ISOChronology.getInstanceUTC).toString)
+  private val finalVersion = config.getVersion
 
   private val indexSpec: IndexSpec = new IndexSpec() // TODO: Allow configuring the IndexSpec
 
-  // TODO: Create appropriate pusher for deep storage (may need to create on driver e.g. factory and serialize)
-  private val pusher: DataSegmentPusher = null
+  private val pusher: DataSegmentPusher = SegmentWriterRegistry.getSegmentPusher(
+    config.deepStorageType, config.deepStorageProperties
+  )
 
   // TODO: rewrite this without using IncrementalIndex, because IncrementalIndex bears a lot of overhead
   //  to support concurrent querying, that is not needed in Spark
@@ -98,7 +84,7 @@ class DruidDataWriter(
 
   override def write(row: InternalRow): Unit = {
     // Check index, flush if too many rows in memory and recreate
-    if (rowsProcessed == rowsPerSegment) {
+    if (rowsProcessed == config.rowsPerSegment) {
       adapters += flushIndex(incrementalIndex)
       incrementalIndex.close()
       incrementalIndex = createInterval()
@@ -111,8 +97,8 @@ class DruidDataWriter(
           timestampParser.apply(row.getLong(tsColumnIndex)).getMillis,
           dimensions,
           // Convert to Java types that Druid knows how to handle
-          schema
-            .map(field => field.name -> row.get(schema.indexOf(field), field.dataType)).toMap
+          config.schema
+            .map(field => field.name -> row.get(config.schema.indexOf(field), field.dataType)).toMap
             .mapValues {
               case traversable: Traversable[_] => traversable.toSeq.asJava
               case x => x
@@ -133,11 +119,11 @@ class DruidDataWriter(
           )
           .withMetrics(dataSchema.getAggregators: _*)
           .withTimestampSpec(dataSchema.getTimestampSpec)
-          .withMinTimestamp(segmentInterval.getStartMillis)
-          .withRollup(rollup)
+          .withMinTimestamp(config.segmentInterval.getStartMillis)
+          .withRollup(config.rollup)
           .build()
       )
-      .setMaxRowCount(rowsPerPersist)
+      .setMaxRowCount(config.rowsPerPersist)
       .buildOnheap()
   }
 
@@ -148,7 +134,7 @@ class DruidDataWriter(
           DruidDataWriter.INDEX_MERGER_V9
             .persist(
               index,
-              segmentInterval,
+              config.segmentInterval,
               tmpPersistDir,
               indexSpec,
               OnHeapMemorySegmentWriteOutMediumFactory.instance()
@@ -179,13 +165,13 @@ class DruidDataWriter(
         .toList
         .asJava
       val shardSpec = ShardSpecRegistry.createShardSpec(
-        shardSpecSerialized,
-        partitionId,
-        partitionsCount,
-        partitionDimensions)
+        config.shardSpecSerialized,
+        config.partitionId,
+        config.partitionsCount,
+        config.partitionDimensions)
       val dataSegmentTemplate = new DataSegment(
-        dataSource,
-        segmentInterval,
+        config.dataSource,
+        config.segmentInterval,
         finalVersion,
         null,
         allDimensions,

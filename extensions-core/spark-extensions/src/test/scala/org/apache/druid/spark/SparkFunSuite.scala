@@ -22,11 +22,14 @@ package org.apache.druid.spark
 import java.util.UUID
 
 import org.apache.druid.java.util.common.FileUtils
+import org.apache.druid.query.aggregation.datasketches.theta.SketchModule
+import org.apache.druid.spark.v2.DruidDataSourceV2.{MAPPER, injectableValues}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.{SparkConf, SparkContext}
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 
+import scala.collection.JavaConverters.{asScalaBufferConverter, seqAsJavaListConverter}
 import scala.reflect.io.Directory
 
 class SparkFunSuite extends AnyFunSuite with BeforeAndAfterEach {
@@ -58,6 +61,11 @@ class SparkFunSuite extends AnyFunSuite with BeforeAndAfterEach {
 
   override def beforeEach(): Unit = {
     setupSparkContextAndSession()
+
+    // This isn't necessary for any test to work, but it suppreses log spam when loading segment
+    // metadata while reading data
+    val jacksonModules = Seq(new SketchModule)
+    MAPPER.registerModules(jacksonModules.flatMap(_.getJacksonModules.asScala.toList).asJava)
     super.beforeEach()
   }
 

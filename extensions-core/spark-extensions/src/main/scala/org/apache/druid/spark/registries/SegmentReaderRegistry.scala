@@ -60,6 +60,7 @@ object SegmentReaderRegistry extends Logging {
     registeredSegmentLoaderFunctions(loadSpecType)(loadSpec)
   }
 
+  // TODO: Add Azure
   private val knownTypes: Map[String, JMap[String, AnyRef] => URI] =
     Map[String, JMap[String, AnyRef] => URI](
       "s3_zip" -> ((loadSpec: JMap[String, AnyRef])=>

@@ -20,23 +20,34 @@
 package org.apache.druid.spark.v2
 
 import org.apache.druid.java.util.common.Intervals
+import org.apache.druid.spark.utils.{DruidDataSourceOptionKeys, DruidDataWriterConfig}
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.sources.v2.DataSourceOptions
 import org.apache.spark.sql.sources.v2.writer.{DataWriter, DataWriterFactory}
+import org.apache.spark.sql.types.StructType
 
-class DruidDataWriterFactory extends DataWriterFactory[InternalRow] {
+class DruidDataWriterFactory(
+                              schema: StructType,
+                              dataSourceOptions: DataSourceOptions
+                            ) extends DataWriterFactory[InternalRow] {
   override def createDataWriter(partitionId: Int, taskId: Long, epochId: Long):
   DataWriter[InternalRow] = {
     // Construct a DataSchema from the class args
     new DruidDataWriter(
-      "",
-      partitionId,
-      -1,
-      null,
-      "",
-      Intervals.ETERNITY, // TODO: This needs to be passed in or constructed (segment interval)
-      "",
-      false,
-      2,
-      3)
+      new DruidDataWriterConfig(
+        dataSourceOptions.tableName().get,
+        partitionId,
+        -1,
+        schema,
+        "",
+        Intervals.ETERNITY, // TODO: This needs to be passed in or constructed (segment interval)
+        "",
+        dataSourceOptions.getBoolean(DruidDataSourceOptionKeys.rollUpSegmentsKey, false),
+        2,
+        3,
+        dataSourceOptions.get(DruidDataSourceOptionKeys.deepStorageTypeKey).orElse("local"),
+        Map[String, AnyRef]()
+      )
+    )
   }
 }

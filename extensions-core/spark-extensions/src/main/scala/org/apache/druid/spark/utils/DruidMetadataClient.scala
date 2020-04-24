@@ -19,18 +19,21 @@
 
 package org.apache.druid.spark.utils
 
+import java.io.ByteArrayInputStream
 import java.util.Properties
 
 import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.base.Suppliers
 import org.apache.druid.indexer.SQLMetadataStorageUpdaterJobHandler
+import org.apache.druid.java.util.common.StringUtils
 import org.apache.druid.spark.registries.SQLConnectorRegistry
 import org.apache.druid.spark.v2.DruidDataSourceV2
 import org.apache.druid.timeline.DataSegment
 import org.skife.jdbi.v2.{DBI, Handle}
 import org.apache.druid.metadata.{MetadataStorageConnectorConfig, MetadataStorageTablesConfig,
   SQLMetadataConnector}
+import org.apache.spark.sql.sources.v2.DataSourceOptions
 
 import scala.collection.JavaConverters.asScalaBufferConverter
 
@@ -107,5 +110,31 @@ class DruidMetadataClient(
   private def buildSQLConnector(): SQLMetadataConnector = {
     SQLConnectorRegistry.create(metadataDbType, connectorConfigSupplier, metadataTableConfigSupplier)
   }
+}
 
+object DruidMetadataClient {
+  def apply(dataSourceOptions: DataSourceOptions): DruidMetadataClient = {
+    assert(dataSourceOptions.get(DruidDataSourceOptionKeys.metadataDbTypeKey).isPresent,
+      s"Must set ${DruidDataSourceOptionKeys.metadataDbTypeKey} or provide segments directly!")
+    val dbcpProperties = new Properties()
+    if (dataSourceOptions.get(DruidDataSourceOptionKeys.metadataDbcpPropertiesKey).isPresent) {
+      // Assuming that .store was used to serialize the original DbcpPropertiesMap to a string
+      dbcpProperties.load(
+        new ByteArrayInputStream(
+          StringUtils.toUtf8(dataSourceOptions
+            .get(DruidDataSourceOptionKeys.metadataDbcpPropertiesKey).get())
+        )
+      )
+    }
+    new DruidMetadataClient(
+      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataDbTypeKey).get(),
+      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataHostKey).orElse("localhost"),
+      dataSourceOptions.getInt(DruidDataSourceOptionKeys.metadataPortKey, -1),
+      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataConnectUriKey).orElse(""),
+      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataUserKey).orElse(""),
+      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataPasswordKey).orElse(""),
+      dbcpProperties,
+      dataSourceOptions.get(DruidDataSourceOptionKeys.metadataBaseNameKey).orElse("druid")
+    )
+  }
 }

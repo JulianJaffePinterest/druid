@@ -25,7 +25,6 @@ import com.fasterxml.jackson.databind.{InjectableValues, ObjectMapper}
 import org.apache.druid.jackson.DefaultObjectMapper
 import org.apache.druid.java.util.common.ISE
 import org.apache.druid.math.expr.ExprMacroTable
-import org.apache.druid.query.aggregation.datasketches.theta.SketchModule
 import org.apache.druid.query.expression.{LikeExprMacro, RegexpExtractExprMacro,
   TimestampCeilExprMacro, TimestampExtractExprMacro, TimestampFloorExprMacro,
   TimestampFormatExprMacro, TimestampParseExprMacro, TimestampShiftExprMacro, TrimExprMacro}
@@ -41,7 +40,7 @@ import org.apache.spark.sql.sources.v2.writer.DataSourceWriter
 import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, ReadSupport, WriteSupport}
 import org.apache.spark.sql.types.StructType
 
-import scala.collection.JavaConverters.{asScalaBufferConverter, seqAsJavaListConverter}
+import scala.collection.JavaConverters.seqAsJavaListConverter
 
 class DruidDataSourceV2 extends DataSourceV2 with ReadSupport with WriteSupport
   with DataSourceRegister with Logging {
@@ -60,6 +59,8 @@ class DruidDataSourceV2 extends DataSourceV2 with ReadSupport with WriteSupport
                             schema: StructType,
                             saveMode: SaveMode,
                             dataSourceOptions: DataSourceOptions): Optional[DataSourceWriter] = {
+    // TODO: Move this to a validator function (probably in DruidDataSourceWriter) and check all
+    //  mandatory keys
     assert(dataSourceOptions.tableName().isPresent,
       s"Must set ${DataSourceOptions.TABLE_KEY}!")
     val dataSource = dataSourceOptions.tableName().get()
@@ -87,7 +88,7 @@ class DruidDataSourceV2 extends DataSourceV2 with ReadSupport with WriteSupport
                                                   schema: StructType,
                                                   dataSourceOptions: DataSourceOptions
                                                 ): Optional[DataSourceWriter] = {
-    Optional.of[DataSourceWriter](new DruidDataSourceWriter)
+    Optional.of[DataSourceWriter](new DruidDataSourceWriter(schema, dataSourceOptions))
   }
 }
 
@@ -111,10 +112,7 @@ object DruidDataSourceV2 {
       .addValue(classOf[ObjectMapper], MAPPER)
       .addValue(classOf[DataSegment.PruneSpecsHolder], PruneSpecsHolder.DEFAULT)
 
-  private val jacksonModules = Seq(new SketchModule)
-
   MAPPER.setInjectableValues(injectableValues)
-  MAPPER.registerModules(jacksonModules.flatMap(_.getJacksonModules.asScala.toList).asJava)
 
   val INDEX_IO = new IndexIO(
     DruidDataSourceV2.MAPPER,

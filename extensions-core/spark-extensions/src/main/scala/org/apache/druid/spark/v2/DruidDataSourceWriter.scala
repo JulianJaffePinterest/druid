@@ -22,14 +22,20 @@ package org.apache.druid.spark.v2
 import java.util.Properties
 
 import org.apache.druid.segment.loading.DataSegmentKiller
-import org.apache.druid.spark.utils.DruidMetadataClient
+import org.apache.druid.spark.registries.SegmentWriterRegistry
+import org.apache.druid.spark.utils.{DruidDataSourceOptionKeys, DruidMetadataClient}
 import org.apache.druid.timeline.DataSegment
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.sources.v2.DataSourceOptions
 import org.apache.spark.sql.sources.v2.writer.{DataSourceWriter, DataWriterFactory, WriterCommitMessage}
+import org.apache.spark.sql.types.StructType
 
 import scala.collection.JavaConverters.seqAsJavaListConverter
 
-class DruidDataSourceWriter extends DataSourceWriter {
+class DruidDataSourceWriter(
+                             schema: StructType,
+                             dataSourceOptions: DataSourceOptions
+                           ) extends DataSourceWriter {
   private lazy val metadataClient = new DruidMetadataClient(
     "",
     "",
@@ -41,7 +47,7 @@ class DruidDataSourceWriter extends DataSourceWriter {
   )
 
   override def createWriterFactory(): DataWriterFactory[InternalRow] = {
-    new DruidDataWriterFactory
+    new DruidDataWriterFactory(schema, dataSourceOptions)
   }
 
   // Push segment locations (from commit messages) to metadata
@@ -55,13 +61,14 @@ class DruidDataSourceWriter extends DataSourceWriter {
 
   // Clean up segments in deep storage but not in metadata
   override def abort(writerCommitMessages: Array[WriterCommitMessage]): Unit = {
-    // TODO: Construct appropriate segment killer for the target deep storage and kill the segments
-    //  listed in the commit messages
-    val segmentKiller: DataSegmentKiller = null
+    val segmentKiller: DataSegmentKiller = SegmentWriterRegistry.getSegmentKiller(
+      dataSourceOptions.get(DruidDataSourceOptionKeys.deepStorageTypeKey).orElse("local"),
+      dataSourceOptions
+    )
 
     val segments =
       writerCommitMessages.flatMap(_.asInstanceOf[DruidWriterCommitMessage].serializedSegments)
     segments.foreach(segment =>
-      segmentKiller.kill(DruidDataSourceV2.MAPPER.readValue(segment, classOf[DataSegment])))
+      segmentKiller.killQuietly(DruidDataSourceV2.MAPPER.readValue(segment, classOf[DataSegment])))
   }
 }

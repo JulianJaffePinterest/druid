@@ -26,6 +26,8 @@ import org.apache.spark.sql.sources.v2.DataSourceOptions
 import org.apache.spark.sql.sources.v2.writer.{DataWriter, DataWriterFactory}
 import org.apache.spark.sql.types.StructType
 
+import scala.collection.JavaConverters.mapAsScalaMapConverter
+
 class DruidDataWriterFactory(
                               schema: StructType,
                               dataSourceOptions: DataSourceOptions
@@ -37,16 +39,16 @@ class DruidDataWriterFactory(
       new DruidDataWriterConfig(
         dataSourceOptions.tableName().get,
         partitionId,
-        -1,
+        -1, // Frustratingly, Spark knows how many partitions there are but doesn't tell us
         schema,
         "",
         Intervals.ETERNITY, // TODO: This needs to be passed in or constructed (segment interval)
         "",
         dataSourceOptions.getBoolean(DruidDataSourceOptionKeys.rollUpSegmentsKey, false),
-        2,
-        3,
+        dataSourceOptions.getInt(DruidDataSourceOptionKeys.rowsPerPersistKey, 2000000),
         dataSourceOptions.get(DruidDataSourceOptionKeys.deepStorageTypeKey).orElse("local"),
-        Map[String, AnyRef]()
+        Map[String, AnyRef](),
+        dataSourceOptions.asMap.asScala.toMap
       )
     )
   }

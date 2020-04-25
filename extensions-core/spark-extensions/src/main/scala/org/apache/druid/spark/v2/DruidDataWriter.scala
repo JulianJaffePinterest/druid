@@ -29,6 +29,8 @@ import org.apache.commons.io.FileUtils
 import org.apache.druid.data.input.MapBasedInputRow
 import org.apache.druid.java.util.common.io.Closer
 import org.apache.druid.java.util.common.parsers.TimestampParser
+import org.apache.druid.segment.data.{BitmapSerdeFactory, CompressionFactory, CompressionStrategy,
+  ConciseBitmapSerdeFactory, RoaringBitmapSerdeFactory}
 import org.apache.druid.segment.{IndexIO, IndexMergerV9, IndexSpec, IndexableAdapter,
   QueryableIndexIndexableAdapter}
 import org.apache.druid.segment.incremental.{IncrementalIndex, IncrementalIndexSchema}
@@ -63,14 +65,44 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
       new TypeReference[DataSchema] {})
   private val dimensions: JList[String] =
     dataSchema.getDimensionsSpec.getDimensions.asScala.map(_.getName).asJava
+  private val partitionDimensions: Option[List[String]] = config
+    .properties.get(DruidDataWriterConfig.partitionDimensionsKey).map(_.split(',').toList)
   private val tsColumn: String = dataSchema.getTimestampSpec.getTimestampColumn
   private val tsColumnIndex = config.schema.indexOf(tsColumn)
   private val timestampParser = TimestampParser
-    .createNumericTimestampParser(dataSchema.getTimestampSpec.getTimestampFormat)
+    .createObjectTimestampParser(dataSchema.getTimestampSpec.getTimestampFormat)
 
   private val finalVersion = config.getVersion
 
-  private val indexSpec: IndexSpec = new IndexSpec() // TODO: Allow configuring the IndexSpec
+  private val indexSpec: IndexSpec = new IndexSpec(
+    DruidDataWriter.getBitmapSerde(
+      config.properties.getOrElse(
+        DruidDataWriterConfig.bitmapTypeKey,
+        DruidDataWriter.defaultBitmapType
+      ),
+      config.properties.get(DruidDataWriterConfig.bitmapTypeCompressOnSerializationKey)
+        .map(_.toBoolean)
+        .getOrElse(RoaringBitmapSerdeFactory.DEFAULT_COMPRESS_RUN_ON_SERIALIZATION)
+    ),
+    DruidDataWriter.getCompressionStrategy(
+      config.properties.getOrElse(
+        DruidDataWriterConfig.dimensionCompressionKey,
+        CompressionStrategy.DEFAULT_COMPRESSION_STRATEGY.toString
+      )
+    ),
+    DruidDataWriter.getCompressionStrategy(
+      config.properties.getOrElse(
+        DruidDataWriterConfig.metricCompressionKey,
+        CompressionStrategy.DEFAULT_COMPRESSION_STRATEGY.toString
+      )
+    ),
+    DruidDataWriter.getLongEncodingStrategy(
+      config.properties.getOrElse(
+        DruidDataWriterConfig.longEncodingKey,
+        CompressionFactory.DEFAULT_LONG_ENCODING_STRATEGY.toString
+      )
+    )
+  )
 
   private val pusher: DataSegmentPusher = SegmentWriterRegistry.getSegmentPusher(
     config.deepStorageType, config.deepStorageProperties
@@ -83,8 +115,12 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
   private var rowsProcessed: Long = 0
 
   override def write(row: InternalRow): Unit = {
+    // TODO: We need to create a map from time bucket to Seq[Adapter] and create segments per time
+    //  bucket instead of assuming all rows fall within one segment. We also need to create multiple
+    //  segments per bucket based on a max rows per segment parameter. Since we don't know how many
+    //  rows we have, we'll have to fill each bucket one by one and use the final bucket for "slop"
     // Check index, flush if too many rows in memory and recreate
-    if (rowsProcessed == config.rowsPerSegment) {
+    if (rowsProcessed == config.rowsPerPersist) {
       adapters += flushIndex(incrementalIndex)
       incrementalIndex.close()
       incrementalIndex = createInterval()
@@ -93,8 +129,8 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
     incrementalIndex.add(
       incrementalIndex.formatRow(
         new MapBasedInputRow(
-          // TODO: Support DateTime timestamps
-          timestampParser.apply(row.getLong(tsColumnIndex)).getMillis,
+          timestampParser
+            .apply(row.get(tsColumnIndex, config.schema(tsColumnIndex).dataType)).getMillis,
           dimensions,
           // Convert to Java types that Druid knows how to handle
           config.schema
@@ -168,7 +204,7 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
         config.shardSpecSerialized,
         config.partitionId,
         config.partitionsCount,
-        config.partitionDimensions)
+        partitionDimensions)
       val dataSegmentTemplate = new DataSegment(
         config.dataSource,
         config.segmentInterval,
@@ -205,4 +241,30 @@ object DruidDataWriter {
     // TODO: Make the segment write out medium configurable
     OnHeapMemorySegmentWriteOutMediumFactory.instance()
   )
+
+  private val defaultBitmapType: String = "roaring"
+
+  def getBitmapSerde(serde: String, compressRunOnSerialization: Boolean): BitmapSerdeFactory = {
+    if (serde == "concise") {
+      new ConciseBitmapSerdeFactory
+    } else {
+      new RoaringBitmapSerdeFactory(compressRunOnSerialization)
+    }
+  }
+
+  def getCompressionStrategy(strategy: String): CompressionStrategy = {
+    if (CompressionStrategy.values().contains(strategy)) {
+      CompressionStrategy.valueOf(strategy)
+    } else {
+      CompressionStrategy.DEFAULT_COMPRESSION_STRATEGY
+    }
+  }
+
+  def getLongEncodingStrategy(strategy: String): CompressionFactory.LongEncodingStrategy = {
+    if (CompressionFactory.LongEncodingStrategy.values().contains(strategy)) {
+      CompressionFactory.LongEncodingStrategy.valueOf(strategy)
+    } else {
+      CompressionFactory.DEFAULT_LONG_ENCODING_STRATEGY
+    }
+  }
 }

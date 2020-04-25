@@ -23,7 +23,6 @@ import java.util.Optional
 
 import com.fasterxml.jackson.databind.{InjectableValues, ObjectMapper}
 import org.apache.druid.jackson.DefaultObjectMapper
-import org.apache.druid.java.util.common.ISE
 import org.apache.druid.math.expr.ExprMacroTable
 import org.apache.druid.query.expression.{LikeExprMacro, RegexpExtractExprMacro,
   TimestampCeilExprMacro, TimestampExtractExprMacro, TimestampFloorExprMacro,
@@ -55,40 +54,44 @@ class DruidDataSourceV2 extends DataSourceV2 with ReadSupport with WriteSupport
     DruidDataSourceReader(schema, dataSourceOptions)
   }
 
+  /**
+    * Create a writer to save a dataframe as a Druid table. Spark knows the partitioning information
+    * for the dataframe, but won't share. We also have only limited ways to detect issues, so for
+    * now we'll need to trust that we're passed valid input. This means that data must already be
+    * bucketed by segment granularity (e.g. each partition must contain rows from exactly one
+    * segment interval), and that each Spark partition will be written as one segment, regardless of
+    * the number of rows in the segment. Something like the DateBucketAndHashPartitioner from the
+    * druid-spark-batch GitHub project can be used to ensure that all partitions have only one time
+    * bucket they're responsible for while also setting a soft upper bound on the maximum size of
+    * a segment. Longer term, we can write multiple segments per DruidDataWriter, which would mean
+    * data wouldn't be dropped if a partition contained rows from more than one segment interval,
+    * but does mean that almost all users of this writer will write out severely non-optimal
+    * segments. This also doesn't solve the problem below :/
+    *
+    * Additionally, while the caller knows how many partitions there are total for each segment, we
+    * don't, and so the caller will need to provide the total number of partitions if necessary for
+    * the desired shard spec (e.g. Numbered or HashedNumbered). Otherwise, we'll have to default to
+    * a partition count of 1 in the shard spec, meaning that Numbered will degrade to Linear and
+    * users won't have atomic loading of segments within an interval.
+    *
+    * TODO: This may actually be bigger problem. Partition ids may not be contiguous for all segments
+    *  in a bucket unless callers are meticulous about partitioning, in which case almost all shard
+    *  specs will consider the output incomplete.
+    *
+    * @param uuid
+    * @param schema
+    * @param saveMode
+    * @param dataSourceOptions
+    * @return
+    */
   override def createWriter(uuid: String,
                             schema: StructType,
                             saveMode: SaveMode,
                             dataSourceOptions: DataSourceOptions): Optional[DataSourceWriter] = {
-    // TODO: Move this to a validator function (probably in DruidDataSourceWriter) and check all
-    //  mandatory keys
-    assert(dataSourceOptions.tableName().isPresent,
-      s"Must set ${DataSourceOptions.TABLE_KEY}!")
-    val dataSource = dataSourceOptions.tableName().get()
-    // TODO: Actually check if the specified data source already exists
-    val dataSourceExists = false
-    saveMode match {
-      case SaveMode.Append => if (dataSourceExists) {
-        throw new UnsupportedOperationException(
-          "Druid does not support appending to existing dataSources, only reindexing!"
-        )
-      } else {
-        createDataSourceWriterOptional(schema, dataSourceOptions)
-      }
-      case SaveMode.ErrorIfExists => throw new ISE(s"$dataSource already exists!")
-      case SaveMode.Ignore => if (dataSourceExists) {
-        Optional.empty[DataSourceWriter]
-      } else {
-        createDataSourceWriterOptional(schema, dataSourceOptions)
-      }
-      case SaveMode.Overwrite => createDataSourceWriterOptional(schema, dataSourceOptions)
-    }
-  }
-
-  private[v2] def createDataSourceWriterOptional(
-                                                  schema: StructType,
-                                                  dataSourceOptions: DataSourceOptions
-                                                ): Optional[DataSourceWriter] = {
-    Optional.of[DataSourceWriter](new DruidDataSourceWriter(schema, dataSourceOptions))
+    // Spark knows the partitioning information for the df, but it won't tell us. We also have very
+    // limited ways to detect issues, so for now we'll need to trust that we're passed
+    // TODO: Take advantage of the job id being provided (uuid in the args list)
+    DruidDataSourceWriter(schema, saveMode, dataSourceOptions)
   }
 }
 

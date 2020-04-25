@@ -33,9 +33,10 @@ import org.apache.spark.sql.sources.{And, EqualNullSafe, EqualTo, Filter, Greate
   StringEndsWith, StringStartsWith}
 import org.apache.spark.sql.sources.v2.DataSourceOptions
 import org.apache.spark.sql.sources.v2.reader.{DataSourceReader, InputPartition,
-  SupportsPushDownFilters, SupportsPushDownRequiredColumns}
+  SupportsPushDownFilters, SupportsPushDownRequiredColumns, SupportsScanColumnarBatch}
 import org.apache.spark.sql.types.{ArrayType, BinaryType, DoubleType, FloatType, LongType,
   StringType, StructField, StructType, TimestampType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.joda.time.Interval
 
 import scala.collection.JavaConverters.{asScalaBufferConverter, seqAsJavaListConverter}
@@ -53,7 +54,7 @@ class DruidDataSourceReader(
                              var schema: Option[StructType] = None,
                              dataSourceOptions: DataSourceOptions
                            ) extends DataSourceReader
-  with SupportsPushDownRequiredColumns with SupportsPushDownFilters {
+  with SupportsPushDownRequiredColumns with SupportsPushDownFilters with SupportsScanColumnarBatch {
   private lazy val metadataClient =
     DruidDataSourceReader.createDruidMetaDataClient(dataSourceOptions)
   private lazy val druidClient = DruidDataSourceReader.createDruidClient(dataSourceOptions)
@@ -181,6 +182,14 @@ class DruidDataSourceReader(
     (timeFilters._1.map(_._2).reduceOption(_ max _ ),
       timeFilters._2.map(_._2).reduceOption(_ min _ ))
   }
+
+  // Stubs for columnar reads; for now always return false for enableBatchRead, meaning this will
+  // never be called
+  override def planBatchInputPartitions(): JList[InputPartition[ColumnarBatch]] = {
+    List.empty[InputPartition[ColumnarBatch]].asJava
+  }
+
+  override def enableBatchRead(): Boolean = false
 }
 
 object DruidDataSourceReader {

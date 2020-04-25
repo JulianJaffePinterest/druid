@@ -107,6 +107,24 @@ class DruidClient(
     }.toMap
   }
 
+  /**
+    * Check if DATASOURCE is present on a cluster. This could also be done via SQL queries to the
+    * INFORMATION_SCHEMA.TABLES table.
+    *
+    * @param dataSource The dataSource to check for existance.
+    * @return True iff DATASOURCE exists on the cluster
+    */
+  def checkIfDataSourceExists(dataSource: String): Boolean = {
+    val response = sendGetRequestWithRetry(
+      s"${druidBaseQueryURL(hostAndPort)}datasources", RETRY_COUNT
+    )
+    val dataSources = objectMapper.readValue[JList[String]](
+      response.getContent, new TypeReference[JList[String]] {}
+    )
+    logInfo(s"Found dataSources [${dataSources.asScala.mkString(", ")}]")
+    dataSources.contains(dataSource)
+  }
+
   private def sendRequestWithRetry(
                                     url: String, content: Array[Byte], retryCount: Int
                                   ): StringFullResponseHolder = {
@@ -158,6 +176,56 @@ class DruidClient(
     new Request(HttpMethod.POST, new URL(url))
       .setHeader("Content-Type", MediaType.APPLICATION_JSON)
       .setContent(content)
+  }
+
+  private def sendGetRequestWithRetry(url: String, retryCount: Int): StringFullResponseHolder = {
+
+    try {
+      sendGetRequest(url)
+    } catch {
+      case e: Exception =>
+        if (retryCount > 0) {
+          logInfo(s"Got exception: ${e.getMessage}, retrying ...")
+          Thread sleep RETRY_WAIT_SECONDS * 1000
+          sendGetRequestWithRetry(url, retryCount - 1)
+        } else {
+          throw Throwables.propagate(e)
+        }
+    }
+  }
+
+  private def sendGetRequest(url: String): StringFullResponseHolder = {
+    try {
+      val request = buildGetRequest(url)
+      var response = httpClient.go(
+        request,
+        new StringFullResponseHandler(Charsets.UTF_8),
+        Duration.millis(TIMEOUT_MILLISECONDS)
+      ).get
+      if (response.getStatus == HttpResponseStatus.TEMPORARY_REDIRECT) {
+        val newUrl = response.getResponse.headers().get("Location")
+        logInfo(s"Got a redirect, new location: $newUrl")
+        response = httpClient.go(
+          buildGetRequest(url), new StringFullResponseHandler(Charsets.UTF_8)
+        ).get
+      }
+      if (!(response.getStatus == HttpResponseStatus.OK)) {
+        throw new ISE(
+          s"Error getting response for %s, status[%s] content[%s]",
+          url,
+          response.getStatus,
+          response.getContent
+        )
+      }
+      response
+    } catch {
+      case e: Exception =>
+        throw Throwables.propagate(e)
+    }
+  }
+
+  private def buildGetRequest(url: String): Request = {
+    new Request(HttpMethod.GET, new URL(url))
   }
 }
 

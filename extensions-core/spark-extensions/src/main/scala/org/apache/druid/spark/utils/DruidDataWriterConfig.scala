@@ -33,13 +33,24 @@ class DruidDataWriterConfig(
                              val shardSpecSerialized: String,
                              val rollup: Boolean,
                              val rowsPerPersist: Int,
-                             val rowsPerSegment: Long,
                              val deepStorageType: String,
                              val deepStorageProperties: Map[String, AnyRef],
-                             version: Option[String] = None,
-                             val partitionDimensions: Option[List[String]] = None
+                             val properties: Map[String, String],
+                             version: Option[String] = None
                            ) extends Serializable {
   def getVersion: String = {
     version.getOrElse(DateTime.now(ISOChronology.getInstanceUTC).toString)
   }
+}
+
+object DruidDataWriterConfig {
+  //
+  val partitionDimensionsKey: String = "partitionDimensions"
+
+  // IndexSpec keys
+  val bitmapTypeKey: String = "bitmapType"
+  val bitmapTypeCompressOnSerializationKey: String = "true"
+  val dimensionCompressionKey: String = "dimensionCompression"
+  val metricCompressionKey: String = "metricCompression"
+  val longEncodingKey: String = "longEncoding"
 }

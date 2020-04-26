@@ -34,7 +34,7 @@ import org.apache.druid.java.util.http.client.response.{StringFullResponseHandle
 import org.apache.druid.query.Druids
 import org.apache.druid.query.metadata.metadata.{ColumnAnalysis, SegmentAnalysis,
   SegmentMetadataQuery}
-import org.apache.druid.spark.v2.DruidDataSourceV2
+import org.apache.druid.spark.MAPPER
 import org.apache.spark.sql.sources.v2.DataSourceOptions
 import org.jboss.netty.handler.codec.http.{HttpMethod, HttpResponseStatus}
 import org.joda.time.{Duration, Interval}
@@ -233,7 +233,7 @@ object DruidClient {
   def apply(dataSourceOptions: DataSourceOptions): DruidClient = {
     new DruidClient(
       HttpClientHolder.create.get,
-      DruidDataSourceV2.MAPPER,
+      MAPPER,
       HostAndPort.fromParts(
         dataSourceOptions.get(DruidDataSourceOptionKeys.brokerHostKey).orElse("localhost"),
         dataSourceOptions.getInt(DruidDataSourceOptionKeys.brokerPortKey, 8082)))

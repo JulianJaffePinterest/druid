@@ -21,7 +21,7 @@ package org.apache.druid.spark.registries
 
 import org.apache.druid.java.util.common.IAE
 import org.apache.druid.spark.utils.Logging
-import org.apache.druid.spark.v2.DruidDataSourceV2
+import org.apache.druid.spark.MAPPER
 import org.apache.druid.timeline.partition.{HashBasedNumberedShardSpec, LinearShardSpec,
   NumberedShardSpec, ShardSpec}
 
@@ -73,7 +73,7 @@ object ShardSpecRegistry extends Logging {
           partitionId,
           partitionsCount,
           partitionDimensions.map(_.asJava).orNull,
-        DruidDataSourceV2.MAPPER)),
+        MAPPER)),
       "linear" -> ((partitionId: Int, _: Int, _: Option[List[String]]) =>
         new LinearShardSpec(partitionId)),
       "numbered" -> ((partitionId: Int, partitionsCount: Int, _: Option[List[String]]) =>

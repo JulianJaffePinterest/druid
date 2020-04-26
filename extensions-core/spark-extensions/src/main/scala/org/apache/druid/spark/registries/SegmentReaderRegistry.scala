@@ -24,7 +24,7 @@ import java.util.{Map => JMap}
 
 import org.apache.druid.java.util.common.{IAE, ISE, StringUtils}
 import org.apache.druid.spark.utils.Logging
-import org.apache.druid.spark.v2.DruidDataSourceV2
+import org.apache.druid.spark.MAPPER
 
 import scala.collection.mutable
 
@@ -54,7 +54,7 @@ object SegmentReaderRegistry extends Logging {
         registerByType(loadSpecType)
       } else {
         throw new IAE("No registered segment reader function for loadSpec %s",
-          DruidDataSourceV2.MAPPER.writeValueAsString(loadSpec))
+          MAPPER.writeValueAsString(loadSpec))
       }
     }
     registeredSegmentLoaderFunctions(loadSpecType)(loadSpec)

@@ -26,7 +26,7 @@ import org.apache.druid.java.util.common.IAE
 import org.apache.druid.segment.loading.{DataSegmentKiller, DataSegmentPusher,
   LocalDataSegmentKiller, LocalDataSegmentPusher, LocalDataSegmentPusherConfig}
 import org.apache.druid.spark.utils.Logging
-import org.apache.druid.spark.v2.DruidDataSourceV2
+import org.apache.druid.spark.MAPPER
 import org.apache.druid.storage.azure.{AzureAccountConfig, AzureCloudBlobIterableFactory,
   AzureDataSegmentConfig, AzureDataSegmentKiller, AzureDataSegmentPusher, AzureInputDataConfig,
   AzureStorage}
@@ -118,21 +118,21 @@ object SegmentWriterRegistry extends Logging {
             "hdfs",
             (properties: Map[String, AnyRef]) =>
               new HdfsDataSegmentPusher(
-                DruidDataSourceV2.MAPPER.readValue[HdfsDataSegmentPusherConfig](
+                MAPPER.readValue[HdfsDataSegmentPusherConfig](
                   properties.get("hdfsPusherConfig").toString,
                   new TypeReference[HdfsDataSegmentPusherConfig] {}
                 ),
-                DruidDataSourceV2.MAPPER.readValue[Configuration](
+                MAPPER.readValue[Configuration](
                   properties.get("hadoopConf").toString,
                   new TypeReference[Configuration] {}
                 ),
-                DruidDataSourceV2.MAPPER),
+                MAPPER),
             (dataSourceOptions: DataSourceOptions) => new HdfsDataSegmentKiller(
-              DruidDataSourceV2.MAPPER.readValue[Configuration](
+              MAPPER.readValue[Configuration](
                 dataSourceOptions.get("hadoopConf").get,
                 new TypeReference[Configuration] {}
               ),
-              DruidDataSourceV2.MAPPER.readValue[HdfsDataSegmentPusherConfig](
+              MAPPER.readValue[HdfsDataSegmentPusherConfig](
                 dataSourceOptions.get("hdfsPusherConfig").get,
                 new TypeReference[HdfsDataSegmentPusherConfig] {}
               )
@@ -143,25 +143,25 @@ object SegmentWriterRegistry extends Logging {
           "s3",
           (properties: Map[String, AnyRef]) =>
             new S3DataSegmentPusher(
-              DruidDataSourceV2.MAPPER.readValue[ServerSideEncryptingAmazonS3](
+              MAPPER.readValue[ServerSideEncryptingAmazonS3](
                 properties.get("s3ServerSideEncryptionConfig").toString,
                 new TypeReference[ServerSideEncryptingAmazonS3] {}
               ),
-              DruidDataSourceV2.MAPPER.readValue[S3DataSegmentPusherConfig](
+              MAPPER.readValue[S3DataSegmentPusherConfig](
                 properties.get("s3DataSegmentPusherConfig").toString,
                 new TypeReference[S3DataSegmentPusherConfig] {}
               )),
           (dataSourceOptions: DataSourceOptions) =>
             new S3DataSegmentKiller(
-              DruidDataSourceV2.MAPPER.readValue[ServerSideEncryptingAmazonS3](
+              MAPPER.readValue[ServerSideEncryptingAmazonS3](
                 dataSourceOptions.get("s3ServerSideEncryptionConfig").get,
                 new TypeReference[ServerSideEncryptingAmazonS3] {}
               ),
-              DruidDataSourceV2.MAPPER.readValue[S3DataSegmentPusherConfig](
+              MAPPER.readValue[S3DataSegmentPusherConfig](
                 dataSourceOptions.get("s3DataSegmentPusherConfig").get,
                 new TypeReference[S3DataSegmentPusherConfig] {}
               ),
-              DruidDataSourceV2.MAPPER.readValue[S3InputDataConfig](
+              MAPPER.readValue[S3InputDataConfig](
                 dataSourceOptions.get("s3InputDataConfig").get,
                 new TypeReference[S3InputDataConfig] {}
               )
@@ -173,26 +173,26 @@ object SegmentWriterRegistry extends Logging {
           "google",
           (properties: Map[String, AnyRef]) =>
           new GoogleDataSegmentPusher(
-            DruidDataSourceV2.MAPPER.readValue[GoogleStorage](
+            MAPPER.readValue[GoogleStorage](
               properties.get("googleStorageConfig").toString,
               new TypeReference[GoogleStorage] {}
             ),
-            DruidDataSourceV2.MAPPER.readValue[GoogleAccountConfig](
+            MAPPER.readValue[GoogleAccountConfig](
               properties.get("googleAccountConfig").toString,
               new TypeReference[GoogleAccountConfig] {}
             )
           ),
           (dataSourceOptions: DataSourceOptions) =>
             new GoogleDataSegmentKiller(
-              DruidDataSourceV2.MAPPER.readValue[GoogleStorage](
+              MAPPER.readValue[GoogleStorage](
                 dataSourceOptions.get("googleStorageConfig").get,
                 new TypeReference[GoogleStorage] {}
               ),
-              DruidDataSourceV2.MAPPER.readValue[GoogleAccountConfig](
+              MAPPER.readValue[GoogleAccountConfig](
                 dataSourceOptions.get("googleAccountConfig").get,
                 new TypeReference[GoogleAccountConfig] {}
               ),
-              DruidDataSourceV2.MAPPER.readValue[GoogleInputDataConfig](
+              MAPPER.readValue[GoogleInputDataConfig](
                 dataSourceOptions.get("googleInputDataConfig").get,
                 new TypeReference[GoogleInputDataConfig] {}
               )
@@ -204,38 +204,38 @@ object SegmentWriterRegistry extends Logging {
           "azure",
           (properties: Map[String, AnyRef]) =>
             new AzureDataSegmentPusher(
-              DruidDataSourceV2.MAPPER.readValue[AzureStorage](
+              MAPPER.readValue[AzureStorage](
                 properties.get("azureStorageConfig").toString,
                 new TypeReference[AzureStorage] {}
               ),
-              DruidDataSourceV2.MAPPER.readValue[AzureAccountConfig](
+              MAPPER.readValue[AzureAccountConfig](
                 properties.get("azureAccountConfig").toString,
                 new TypeReference[AzureAccountConfig] {}
               ),
-              DruidDataSourceV2.MAPPER.readValue[AzureDataSegmentConfig](
+              MAPPER.readValue[AzureDataSegmentConfig](
                 properties.get("azureDataSegmentConfig").toString,
                 new TypeReference[AzureDataSegmentConfig] {}
               )
             ),
           (dataSourceOptions: DataSourceOptions) =>
             new AzureDataSegmentKiller(
-              DruidDataSourceV2.MAPPER.readValue[AzureDataSegmentConfig](
+              MAPPER.readValue[AzureDataSegmentConfig](
                 dataSourceOptions.get("azureDataSegmentConfig").get,
                 new TypeReference[AzureDataSegmentConfig] {}
               ),
-              DruidDataSourceV2.MAPPER.readValue[AzureInputDataConfig](
+              MAPPER.readValue[AzureInputDataConfig](
                 dataSourceOptions.get("azureInputDataConfig").get,
                 new TypeReference[AzureInputDataConfig] {}
               ),
-              DruidDataSourceV2.MAPPER.readValue[AzureAccountConfig](
+              MAPPER.readValue[AzureAccountConfig](
                 dataSourceOptions.get("azureAccountConfig").get,
                 new TypeReference[AzureAccountConfig] {}
               ),
-              DruidDataSourceV2.MAPPER.readValue[AzureStorage](
+              MAPPER.readValue[AzureStorage](
                 dataSourceOptions.get("azureStorageConfig").get,
                 new TypeReference[AzureStorage] {}
               ),
-              DruidDataSourceV2.MAPPER.readValue[AzureCloudBlobIterableFactory](
+              MAPPER.readValue[AzureCloudBlobIterableFactory](
                 dataSourceOptions.get("azureCloudBlobIterableFactoryConfig").get,
                 new TypeReference[AzureCloudBlobIterableFactory] {}
               )

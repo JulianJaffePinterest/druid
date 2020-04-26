@@ -38,9 +38,13 @@ object DruidDataSourceOptionKeys {
   val useCompactSketchesKey: String = "useCompactSketches" // Default: false
 
   // Writer Configs
+  val versionKey: String = "version"
   val dimensionsKey: String = "dimensions"
   val metricsKey: String = "metrics"
   val excludedDimensionsKey: String = "excludedDimensions"
+  val segmentGranularity: String = "segmentGranularity"
+  val queryGranularity: String = "queryGranularity"
+  val partitionsMapKey: String = "partitionaMap"
   val deepStorageTypeKey: String = "deepStorageType"
   val timestampColumnKey: String = "timestampColumn" // Default: ts
   val timestampFormatKey: String = "timestampFormat" // Default: auto

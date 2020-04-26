@@ -21,16 +21,6 @@ package org.apache.druid.spark.v2
 
 import java.util.Optional
 
-import com.fasterxml.jackson.databind.{InjectableValues, ObjectMapper}
-import org.apache.druid.jackson.DefaultObjectMapper
-import org.apache.druid.math.expr.ExprMacroTable
-import org.apache.druid.query.expression.{LikeExprMacro, RegexpExtractExprMacro,
-  TimestampCeilExprMacro, TimestampExtractExprMacro, TimestampFloorExprMacro,
-  TimestampFormatExprMacro, TimestampParseExprMacro, TimestampShiftExprMacro, TrimExprMacro}
-import org.apache.druid.segment.writeout.OnHeapMemorySegmentWriteOutMediumFactory
-import org.apache.druid.segment.{IndexIO, IndexMergerV9}
-import org.apache.druid.timeline.DataSegment
-import org.apache.druid.timeline.DataSegment.PruneSpecsHolder
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.sources.DataSourceRegister
@@ -38,8 +28,6 @@ import org.apache.spark.sql.sources.v2.reader.DataSourceReader
 import org.apache.spark.sql.sources.v2.writer.DataSourceWriter
 import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, ReadSupport, WriteSupport}
 import org.apache.spark.sql.types.StructType
-
-import scala.collection.JavaConverters.seqAsJavaListConverter
 
 class DruidDataSourceV2 extends DataSourceV2 with ReadSupport with WriteSupport
   with DataSourceRegister with Logging {
@@ -71,6 +59,9 @@ class DruidDataSourceV2 extends DataSourceV2 with ReadSupport with WriteSupport
     * a partition count of 1 in the shard spec, meaning that Numbered will degrade to Linear and
     * users won't have atomic loading of segments within an interval.
     *
+    * To work around this, users can provide a broadcast map from (Spark) partition id to the
+    * partition num and total partition count for the segment
+    *
     * TODO: This may actually be bigger problem. Partition ids may not be contiguous for all segments
     *  in a bucket unless callers are meticulous about partitioning, in which case almost all shard
     *  specs will consider the output incomplete.
@@ -90,38 +81,4 @@ class DruidDataSourceV2 extends DataSourceV2 with ReadSupport with WriteSupport
     // TODO: Take advantage of the job id being provided (uuid in the args list)
     DruidDataSourceWriter(schema, saveMode, dataSourceOptions)
   }
-}
-
-object DruidDataSourceV2 {
-  val MAPPER: ObjectMapper = new DefaultObjectMapper()
-
-  private val injectableValues: InjectableValues =
-    new InjectableValues.Std()
-      .addValue(classOf[ExprMacroTable], new ExprMacroTable(Seq(
-        new LikeExprMacro(),
-        new RegexpExtractExprMacro(),
-        new TimestampCeilExprMacro(),
-        new TimestampExtractExprMacro(),
-        new TimestampFormatExprMacro(),
-        new TimestampParseExprMacro(),
-        new TimestampShiftExprMacro(),
-        new TimestampFloorExprMacro(),
-        new TrimExprMacro.BothTrimExprMacro(),
-        new TrimExprMacro.LeftTrimExprMacro(),
-        new TrimExprMacro.RightTrimExprMacro()).asJava))
-      .addValue(classOf[ObjectMapper], MAPPER)
-      .addValue(classOf[DataSegment.PruneSpecsHolder], PruneSpecsHolder.DEFAULT)
-
-  MAPPER.setInjectableValues(injectableValues)
-
-  val INDEX_IO = new IndexIO(
-    DruidDataSourceV2.MAPPER,
-    () => 1000000
-  )
-
-  val INDEX_MERGER_V9 = new IndexMergerV9(
-    DruidDataSourceV2.MAPPER,
-    INDEX_IO,
-    OnHeapMemorySegmentWriteOutMediumFactory.instance()
-  )
 }

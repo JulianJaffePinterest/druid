@@ -21,11 +21,15 @@ package org.apache.druid.spark.v2
 
 import java.util.Optional
 
+import com.fasterxml.jackson.core.`type`.TypeReference
 import org.apache.druid.data.input.impl.DimensionSchema.MultiValueHandling
 import org.apache.druid.data.input.impl.{DimensionSchema, DimensionsSpec, DoubleDimensionSchema,
   FloatDimensionSchema, LongDimensionSchema, StringDimensionSchema, TimestampSpec}
-import org.apache.druid.java.util.common.IAE
+import org.apache.druid.java.util.common.granularity.{Granularities, Granularity}
+import org.apache.druid.java.util.common.{DateTimes, IAE}
 import org.apache.druid.segment.indexing.DataSchema
+import org.apache.druid.segment.indexing.granularity.UniformGranularitySpec
+import org.apache.druid.spark.MAPPER
 import org.apache.druid.spark.utils.{DruidDataSourceOptionKeys, DruidDataWriterConfig}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.sources.v2.DataSourceOptions
@@ -41,20 +45,31 @@ class DruidDataWriterFactory(
                             ) extends DataWriterFactory[InternalRow] {
   override def createDataWriter(partitionId: Int, taskId: Long, epochId: Long):
   DataWriter[InternalRow] = {
+    val version = dataSourceOptions
+      .get(DruidDataSourceOptionKeys.versionKey)
+      .orElse(DateTimes.nowUtc().toString)
+
+    val partitionIdToDruidPartitionsMap = DruidDataWriterFactory.scalifyOptional(
+      dataSourceOptions
+        .get(DruidDataSourceOptionKeys.partitionsMapKey)
+    ).map(serializedMap => MAPPER.readValue[Map[Int, Map[Long, (Int, Int)]]](
+      serializedMap, new TypeReference[Map[Int, Map[Long, (Int, Int)]]] {}
+    ))
+
     // We validated in DruidDataSourceWriter that either "dimensions" or "metrics" was set
-    val dimensionsArr = DruidDataWriterFactory.scalify(
+    val dimensionsArr = DruidDataWriterFactory.scalifyOptional(
       dataSourceOptions
         .get(DruidDataSourceOptionKeys.dimensionsKey)
     )
       .map(_.split(','))
       .getOrElse(Array.empty[String])
-    val metricsArr = DruidDataWriterFactory.scalify(
+    val metricsArr = DruidDataWriterFactory.scalifyOptional(
       dataSourceOptions
         .get(DruidDataSourceOptionKeys.metricsKey)
     )
       .map(_.split(','))
       .getOrElse(Array.empty[String])
-    val excludedDimensions = DruidDataWriterFactory.scalify(
+    val excludedDimensions = DruidDataWriterFactory.scalifyOptional(
       dataSourceOptions
         .get(DruidDataSourceOptionKeys.excludedDimensionsKey)
     )
@@ -71,17 +86,7 @@ class DruidDataWriterFactory(
     } else {
       metricsArr
     }
-    /*
 
-      @JsonProperty("dataSource") String dataSource,
-      @JsonProperty("timestampSpec") @Nullable TimestampSpec timestampSpec, // can be null in old task spec
-      @JsonProperty("dimensionsSpec") @Nullable DimensionsSpec dimensionsSpec, // can be null in old task spec
-      @JsonProperty("metricsSpec") AggregatorFactory[] aggregators,
-      @JsonProperty("granularitySpec") GranularitySpec granularitySpec,
-      @JsonProperty("transformSpec") TransformSpec transformSpec,
-      @Deprecated @JsonProperty("parser") @Nullable Map<String, Object> parserMap,
-      @JacksonInject ObjectMapper objectMapper
-     */
     val dataSchema = new DataSchema(
       dataSourceOptions.tableName().get(),
       new TimestampSpec(
@@ -97,24 +102,34 @@ class DruidDataWriterFactory(
         excludedDimensions.asJava,
         null // scalastyle:ignore null
       ),
-      null,
-      null,
-      null,
-      null,
-      DruidDataSourceV2.MAPPER
+      null, // TODO
+      new UniformGranularitySpec(
+        dataSourceOptions.get(DruidDataSourceOptionKeys.segmentGranularity)
+          .map(Granularity.fromString(_))
+          .orElse(Granularities.ALL),
+        dataSourceOptions.get(DruidDataSourceOptionKeys.queryGranularity)
+          .map(Granularity.fromString(_))
+          .orElse(Granularities.NONE),
+        dataSourceOptions.getBoolean(DruidDataSourceOptionKeys.rollUpSegmentsKey, true),
+        null // scalastyle:ignore null
+      ),
+      null, // scalastyle:ignore null
+      null, // scalastyle:ignore null
+      MAPPER
     )
     new DruidDataWriter(
       new DruidDataWriterConfig(
         dataSourceOptions.tableName().get,
         partitionId,
-        -1, // Frustratingly, Spark knows how many partitions there are but doesn't tell us
         schema,
-        DruidDataSourceV2.MAPPER.writeValueAsString(dataSchema),
+        MAPPER.writeValueAsString(dataSchema),
         "",
         dataSourceOptions.getInt(DruidDataSourceOptionKeys.rowsPerPersistKey, 2000000),
         dataSourceOptions.get(DruidDataSourceOptionKeys.deepStorageTypeKey).orElse("local"),
         Map[String, AnyRef](),
-        dataSourceOptions.asMap.asScala.toMap
+        dataSourceOptions.asMap.asScala.toMap,
+        version,
+        partitionIdToDruidPartitionsMap
       )
     )
   }
@@ -147,7 +162,7 @@ object DruidDataWriterFactory {
   }
 
   // Needed to work around Java Function's type invariance
-  def scalify[T](javaOptional: Optional[T]): Option[T] = {
+  def scalifyOptional[T](javaOptional: Optional[T]): Option[T] = {
     if (javaOptional.isPresent) Some(javaOptional.get()) else None
   }
 }

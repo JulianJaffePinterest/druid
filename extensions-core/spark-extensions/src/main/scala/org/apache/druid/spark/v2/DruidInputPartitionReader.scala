@@ -30,6 +30,7 @@ import org.apache.druid.query.filter.{AndDimFilter, BoundDimFilter, DimFilter, I
 import org.apache.druid.segment.{QueryableIndex, QueryableIndexStorageAdapter}
 import org.apache.druid.segment.realtime.firehose.{IngestSegmentFirehose, WindowedStorageAdapter}
 import org.apache.druid.segment.transform.TransformSpec
+import org.apache.druid.spark.MAPPER
 import org.apache.druid.spark.registries.{ComplexMetricRegistry, SegmentReaderRegistry}
 import org.apache.druid.spark.utils.{Logging, SerializableConfiguration}
 import org.apache.druid.timeline.DataSegment
@@ -68,7 +69,7 @@ class DruidInputPartitionReader(segmentStr: String,
   ComplexMetricRegistry.registerSerdes()
 
   private val segment =
-    DruidDataSourceV2.MAPPER.readValue[DataSegment](segmentStr, new TypeReference[DataSegment] {})
+    MAPPER.readValue[DataSegment](segmentStr, new TypeReference[DataSegment] {})
   private val conf = broadcastedConf.value.value
   private val tmpDir: File = FileUtils.createTempDir
   private val queryableIndex: QueryableIndex = loadSegment(segment)
@@ -114,7 +115,7 @@ class DruidInputPartitionReader(segmentStr: String,
       if (!segmentDir.mkdir) throw new ISE("Failed to make directory[%s]", segmentDir)
       unzip(path, segmentDir)
     }
-    val index = DruidDataSourceV2.INDEX_IO.loadIndex(segmentDir)
+    val index = INDEX_IO.loadIndex(segmentDir)
     logInfo(StringUtils.format("Loaded segment[%s].", segment.getId))
     index
   }

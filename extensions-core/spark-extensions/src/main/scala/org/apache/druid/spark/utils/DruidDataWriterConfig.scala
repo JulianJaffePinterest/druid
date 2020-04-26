@@ -19,13 +19,11 @@
 
 package org.apache.druid.spark.utils
 
-import org.apache.druid.java.util.common.DateTimes
 import org.apache.spark.sql.types.StructType
 
 class DruidDataWriterConfig(
                              val dataSource: String,
                              val partitionId: Int,
-                             val partitionsCount: Int,
                              val schema: StructType,
                              val dataSchemaSerialized: String,
                              val shardSpecSerialized: String,
@@ -33,12 +31,9 @@ class DruidDataWriterConfig(
                              val deepStorageType: String,
                              val deepStorageProperties: Map[String, AnyRef],
                              val properties: Map[String, String],
-                             version: Option[String] = None
-                           ) extends Serializable {
-  def getVersion: String = {
-    version.getOrElse(DateTimes.nowUtc().toString)
-  }
-}
+                             val version: String,
+                             val partitionMap: Option[Map[Int, Map[Long, (Int, Int)]]] = None
+                           ) extends Serializable {}
 
 object DruidDataWriterConfig {
   //

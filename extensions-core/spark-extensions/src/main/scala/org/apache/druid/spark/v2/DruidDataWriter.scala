@@ -32,12 +32,13 @@ import org.apache.druid.java.util.common.io.Closer
 import org.apache.druid.java.util.common.parsers.TimestampParser
 import org.apache.druid.segment.data.{BitmapSerdeFactory, CompressionFactory, CompressionStrategy,
   ConciseBitmapSerdeFactory, RoaringBitmapSerdeFactory}
-import org.apache.druid.segment.{IndexIO, IndexMergerV9, IndexSpec, IndexableAdapter,
+import org.apache.druid.segment.{IndexSpec, IndexableAdapter,
   QueryableIndexIndexableAdapter}
 import org.apache.druid.segment.incremental.{IncrementalIndex, IncrementalIndexSchema}
 import org.apache.druid.segment.indexing.DataSchema
 import org.apache.druid.segment.loading.DataSegmentPusher
 import org.apache.druid.segment.writeout.OnHeapMemorySegmentWriteOutMediumFactory
+import org.apache.druid.spark.MAPPER
 import org.apache.druid.spark.registries.{SegmentWriterRegistry, ShardSpecRegistry}
 import org.apache.druid.spark.utils.DruidDataWriterConfig
 import org.apache.druid.timeline.DataSegment
@@ -63,7 +64,7 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
   )
 
   private val dataSchema: DataSchema =
-    DruidDataSourceV2.MAPPER.readValue[DataSchema](config.dataSchemaSerialized,
+    MAPPER.readValue[DataSchema](config.dataSchemaSerialized,
       new TypeReference[DataSchema] {})
   private val dimensions: JList[String] =
     dataSchema.getDimensionsSpec.getDimensions.asScala.map(_.getName).asJava
@@ -74,7 +75,11 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
   private val timestampParser = TimestampParser
     .createObjectTimestampParser(dataSchema.getTimestampSpec.getTimestampFormat)
 
-  private val finalVersion = config.getVersion
+  private val partitionNumMap = (bucket: Long) => if (config.partitionMap.isDefined) {
+    config.partitionMap.get(config.partitionId)(bucket)
+  } else {
+    (config.partitionId, 1)
+  }
 
   private val indexSpec: IndexSpec = new IndexSpec(
     DruidDataWriter.getBitmapSerde(
@@ -170,8 +175,8 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
   private[v2] def flushIndex(index: IncrementalIndex[_]): IndexableAdapter = {
     new QueryableIndexIndexableAdapter(
       closer.register(
-        DruidDataWriter.INDEX_IO.loadIndex(
-          DruidDataWriter.INDEX_MERGER_V9
+        INDEX_IO.loadIndex(
+          INDEX_MERGER_V9
             .persist(
               index,
               index.getInterval,
@@ -198,7 +203,7 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
       if (adapters.nonEmpty) {
         // TODO: Merge adapters up to a total number of rows, and then split into new segments.
         //  The tricky piece will be determining the partition number for multiple segments
-        val finalStaticIndexer = DruidDataWriter.INDEX_MERGER_V9
+        val finalStaticIndexer = INDEX_MERGER_V9
         val file = finalStaticIndexer.merge(
           adapters.asJava,
           true,
@@ -213,13 +218,13 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
           .asJava
         val shardSpec = ShardSpecRegistry.createShardSpec(
           config.shardSpecSerialized,
-          config.partitionId,
-          config.partitionsCount,
+          partitionNumMap(index.getInterval.getStartMillis)._1,
+          partitionNumMap(index.getInterval.getStartMillis)._2,
           partitionDimensions)
         val dataSegmentTemplate = new DataSegment(
           config.dataSource,
           index.getInterval,
-          finalVersion,
+          config.version,
           null, // scalastyle:ignore null
           allDimensions,
           dataSchema.getAggregators.map(_.getName).toList.asJava,
@@ -228,7 +233,7 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
           -1L
         )
         val finalDataSegment = pusher.push(file, dataSegmentTemplate, true)
-        Seq(DruidDataSourceV2.MAPPER.writeValueAsString(finalDataSegment))
+        Seq(MAPPER.writeValueAsString(finalDataSegment))
       } else {
         Seq.empty
       }
@@ -242,18 +247,6 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
 }
 
 object DruidDataWriter {
-  private val INDEX_IO = new IndexIO(
-    DruidDataSourceV2.MAPPER,
-    () => 1000000
-  )
-
-  private val INDEX_MERGER_V9 = new IndexMergerV9(
-    DruidDataSourceV2.MAPPER,
-    INDEX_IO,
-    // TODO: Make the segment write out medium configurable
-    OnHeapMemorySegmentWriteOutMediumFactory.instance()
-  )
-
   private val defaultBitmapType: String = "roaring"
 
   def getBitmapSerde(serde: String, compressRunOnSerialization: Boolean): BitmapSerdeFactory = {

@@ -27,8 +27,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.base.Suppliers
 import org.apache.druid.indexer.SQLMetadataStorageUpdaterJobHandler
 import org.apache.druid.java.util.common.StringUtils
+import org.apache.druid.spark.MAPPER
 import org.apache.druid.spark.registries.SQLConnectorRegistry
-import org.apache.druid.spark.v2.DruidDataSourceV2
 import org.apache.druid.timeline.DataSegment
 import org.skife.jdbi.v2.{DBI, Handle}
 import org.apache.druid.metadata.{MetadataStorageConnectorConfig, MetadataStorageTablesConfig,
@@ -87,7 +87,7 @@ class DruidMetadataClient(
           .bind("end", endTime)
           .mapTo(classOf[String]).list().asScala
       result.map(m =>
-        DruidDataSourceV2.MAPPER.readValue[DataSegment](m, new TypeReference[DataSegment] {})
+        MAPPER.readValue[DataSegment](m, new TypeReference[DataSegment] {})
       )
     })
   }

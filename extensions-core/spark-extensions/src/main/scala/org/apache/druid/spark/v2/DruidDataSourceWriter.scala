@@ -23,6 +23,7 @@ import java.util.Optional
 
 import org.apache.druid.java.util.common.ISE
 import org.apache.druid.segment.loading.DataSegmentKiller
+import org.apache.druid.spark.MAPPER
 import org.apache.druid.spark.registries.SegmentWriterRegistry
 import org.apache.druid.spark.utils.{DruidClient, DruidDataSourceOptionKeys, DruidMetadataClient,
   Logging}
@@ -54,8 +55,7 @@ class DruidDataSourceWriter(
     logInfo(s"Committing the following segments: ${segments.mkString(", ")}")
 
     metadataClient.publishSegments(
-      segments.map(DruidDataSourceV2.MAPPER.readValue(_, classOf[DataSegment])).toList.asJava,
-      DruidDataSourceV2.MAPPER)
+      segments.map(MAPPER.readValue(_, classOf[DataSegment])).toList.asJava, MAPPER)
   }
 
   // Clean up segments in deep storage but not in metadata
@@ -70,7 +70,7 @@ class DruidDataSourceWriter(
       dataSourceOptions
     )
     segments.foreach(segment =>
-      segmentKiller.killQuietly(DruidDataSourceV2.MAPPER.readValue(segment, classOf[DataSegment])))
+      segmentKiller.killQuietly(MAPPER.readValue(segment, classOf[DataSegment])))
   }
 }
 

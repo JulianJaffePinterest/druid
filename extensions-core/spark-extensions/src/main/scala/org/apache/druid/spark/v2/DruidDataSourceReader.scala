@@ -24,6 +24,7 @@ import java.util.{List => JList}
 
 import com.fasterxml.jackson.core.`type`.TypeReference
 import org.apache.druid.java.util.common.{DateTimes, Intervals, JodaUtils}
+import org.apache.druid.spark.MAPPER
 import org.apache.druid.spark.registries.ComplexMetricRegistry
 import org.apache.druid.spark.utils.{DruidClient, DruidDataSourceOptionKeys, DruidMetadataClient}
 import org.apache.druid.timeline.DataSegment
@@ -95,7 +96,7 @@ class DruidDataSourceReader(
       dataSourceOptions.get(DruidDataSourceOptionKeys.useCompactSketchesKey).isPresent
     // Allow passing hard-coded list of segments to load
     if (dataSourceOptions.get("segments").isPresent) {
-      val segments: JList[DataSegment] = DruidDataSourceV2.MAPPER.readValue(
+      val segments: JList[DataSegment] = MAPPER.readValue(
         dataSourceOptions.get("segments").get(),
         new TypeReference[JList[DataSegment]]() {})
       segments.asScala

@@ -24,10 +24,9 @@ import java.util.{List => JList}
 
 import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.google.api.client.util.{Charsets, Throwables}
 import com.google.common.net.HostAndPort
 import javax.ws.rs.core.MediaType
-import org.apache.druid.java.util.common.ISE
+import org.apache.druid.java.util.common.{ISE, StringUtils}
 import org.apache.druid.java.util.http.client.{HttpClient, Request}
 import org.apache.druid.java.util.http.client.response.{StringFullResponseHandler,
   StringFullResponseHolder}
@@ -137,7 +136,7 @@ class DruidClient(
           Thread sleep RETRY_WAIT_SECONDS * 1000
           sendRequestWithRetry(url, content, retryCount - 1)
         } else {
-          throw Throwables.propagate(e)
+          throw e
         }
     }
   }
@@ -147,14 +146,14 @@ class DruidClient(
       val request = buildRequest(url, content)
       var response = httpClient.go(
         request,
-        new StringFullResponseHandler(Charsets.UTF_8),
+        new StringFullResponseHandler(StringUtils.UTF8_CHARSET),
         Duration.millis(TIMEOUT_MILLISECONDS)
       ).get
       if (response.getStatus == HttpResponseStatus.TEMPORARY_REDIRECT) {
         val newUrl = response.getResponse.headers().get("Location")
         logInfo(s"Got a redirect, new location: $newUrl")
         response = httpClient.go(
-          buildRequest(newUrl, content), new StringFullResponseHandler(Charsets.UTF_8)
+          buildRequest(newUrl, content), new StringFullResponseHandler(StringUtils.UTF8_CHARSET)
         ).get
       }
       if (!(response.getStatus == HttpResponseStatus.OK)) {
@@ -168,7 +167,7 @@ class DruidClient(
       response
     } catch {
       case e: Exception =>
-        throw Throwables.propagate(e)
+        throw e
     }
   }
 
@@ -189,7 +188,7 @@ class DruidClient(
           Thread sleep RETRY_WAIT_SECONDS * 1000
           sendGetRequestWithRetry(url, retryCount - 1)
         } else {
-          throw Throwables.propagate(e)
+          throw e
         }
     }
   }
@@ -199,14 +198,14 @@ class DruidClient(
       val request = buildGetRequest(url)
       var response = httpClient.go(
         request,
-        new StringFullResponseHandler(Charsets.UTF_8),
+        new StringFullResponseHandler(StringUtils.UTF8_CHARSET),
         Duration.millis(TIMEOUT_MILLISECONDS)
       ).get
       if (response.getStatus == HttpResponseStatus.TEMPORARY_REDIRECT) {
         val newUrl = response.getResponse.headers().get("Location")
         logInfo(s"Got a redirect, new location: $newUrl")
         response = httpClient.go(
-          buildGetRequest(url), new StringFullResponseHandler(Charsets.UTF_8)
+          buildGetRequest(url), new StringFullResponseHandler(StringUtils.UTF8_CHARSET)
         ).get
       }
       if (!(response.getStatus == HttpResponseStatus.OK)) {
@@ -220,7 +219,7 @@ class DruidClient(
       response
     } catch {
       case e: Exception =>
-        throw Throwables.propagate(e)
+        throw e
     }
   }
 

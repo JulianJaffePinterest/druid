@@ -42,10 +42,10 @@ object DruidDataSourceOptionKeys {
   val dimensionsKey: String = "dimensions"
   val metricsKey: String = "metrics"
   val excludedDimensionsKey: String = "excludedDimensions"
-  val segmentGranularity: String = "segmentGranularity"
-  val queryGranularity: String = "queryGranularity"
-  val partitionsMapKey: String = "partitionaMap"
-  val deepStorageTypeKey: String = "deepStorageType"
+  val segmentGranularity: String = "segmentGranularity" // Default: All
+  val queryGranularity: String = "queryGranularity" // Default: None
+  val partitionsMapKey: String = "partitionMap"
+  val deepStorageTypeKey: String = "deepStorageType" // Default: local
   val timestampColumnKey: String = "timestampColumn" // Default: ts
   val timestampFormatKey: String = "timestampFormat" // Default: auto
   val rollUpSegmentsKey: String = "rollUpSegments" // Default: false

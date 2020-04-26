@@ -104,12 +104,16 @@ class DruidDataWriterFactory(
       ),
       null, // TODO
       new UniformGranularitySpec(
-        dataSourceOptions.get(DruidDataSourceOptionKeys.segmentGranularity)
-          .map(Granularity.fromString(_))
-          .orElse(Granularities.ALL),
-        dataSourceOptions.get(DruidDataSourceOptionKeys.queryGranularity)
-          .map(Granularity.fromString(_))
-          .orElse(Granularities.NONE),
+        DruidDataWriterFactory.scalifyOptional(
+          dataSourceOptions.get(DruidDataSourceOptionKeys.segmentGranularity)
+        )
+          .map(Granularity.fromString)
+          .getOrElse(Granularities.ALL),
+        DruidDataWriterFactory.scalifyOptional(
+          dataSourceOptions.get(DruidDataSourceOptionKeys.queryGranularity)
+        )
+          .map(Granularity.fromString)
+          .getOrElse(Granularities.NONE),
         dataSourceOptions.getBoolean(DruidDataSourceOptionKeys.rollUpSegmentsKey, true),
         null // scalastyle:ignore null
       ),

@@ -19,6 +19,7 @@
 
 package org.apache.druid.spark.v2
 
+import org.apache.druid.spark.MAPPER
 import org.apache.druid.spark.SparkFunSuite
 import org.apache.druid.timeline.DataSegment
 import org.apache.spark.sql.catalyst.InternalRow
@@ -42,7 +43,7 @@ class DruidDataSourceReaderSuite extends SparkFunSuite with Matchers
       InternalRow.fromSeq(Seq(1577923200000L, List("dim1", "dim3"), 2, 3, 7, 1, 2, 4, 11.17, 3.7, idThreeSketch))
     )
 
-    val segmentsString = DruidDataSourceV2.MAPPER.writeValueAsString(
+    val segmentsString = MAPPER.writeValueAsString(
       List[DataSegment](firstSegment, secondSegment, thirdSegment).asJava
     )
     val dsoMap = Map("segments" -> segmentsString)

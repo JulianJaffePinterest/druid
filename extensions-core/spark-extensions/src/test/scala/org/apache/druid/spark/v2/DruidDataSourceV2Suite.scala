@@ -20,6 +20,7 @@
 package org.apache.druid.spark.v2
 
 import org.apache.druid.java.util.common.StringUtils
+import org.apache.druid.spark.MAPPER
 import org.apache.druid.spark.SparkFunSuite
 import org.apache.druid.timeline.DataSegment
 import org.apache.spark.sql.Row
@@ -39,7 +40,7 @@ class DruidDataSourceV2Suite extends SparkFunSuite with Matchers
       Row.fromSeq(Seq(1577988000000L, List("dim2"), "3", "2", "1", 1L, 1L, 7L, 0.0, 19.0F, idTwoSketch))
     ).asJava, schema)
 
-    val segmentsString = DruidDataSourceV2.MAPPER.writeValueAsString(
+    val segmentsString = MAPPER.writeValueAsString(
       List[DataSegment](firstSegment, secondSegment, thirdSegment).asJava
     )
 

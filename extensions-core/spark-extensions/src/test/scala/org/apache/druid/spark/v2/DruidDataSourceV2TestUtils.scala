@@ -23,6 +23,7 @@ import java.io.File
 import java.util
 
 import org.apache.druid.java.util.common.{Intervals, StringUtils}
+import org.apache.druid.spark.MAPPER
 import org.apache.druid.timeline.DataSegment
 import org.apache.druid.timeline.partition.NumberedShardSpec
 import org.apache.spark.sql.catalyst.InternalRow
@@ -88,9 +89,9 @@ trait DruidDataSourceV2TestUtils {
     3409L
   )
 
-  val firstSegmentString: String = DruidDataSourceV2.MAPPER.writeValueAsString(firstSegment)
-  val secondSegmentString: String = DruidDataSourceV2.MAPPER.writeValueAsString(secondSegment)
-  val thirdSegmentString: String = DruidDataSourceV2.MAPPER.writeValueAsString(thirdSegment)
+  val firstSegmentString: String = MAPPER.writeValueAsString(firstSegment)
+  val secondSegmentString: String = MAPPER.writeValueAsString(secondSegment)
+  val thirdSegmentString: String = MAPPER.writeValueAsString(thirdSegment)
 
   val idOneSketch: Array[Byte] = StringUtils.decodeBase64String("AQMDAAA6zJNV0wc7TCHDCQ==")
   val idTwoSketch: Array[Byte] = StringUtils.decodeBase64String("AQMDAAA6zJNHlmybd5/laQ==")

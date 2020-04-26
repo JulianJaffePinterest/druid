@@ -23,7 +23,6 @@ import java.util.UUID
 
 import org.apache.druid.java.util.common.FileUtils
 import org.apache.druid.query.aggregation.datasketches.theta.SketchModule
-import org.apache.druid.spark.v2.DruidDataSourceV2.{MAPPER, injectableValues}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.{SparkConf, SparkContext}
 import org.scalatest.BeforeAndAfterEach

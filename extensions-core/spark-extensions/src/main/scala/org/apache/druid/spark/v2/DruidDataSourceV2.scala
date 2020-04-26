@@ -56,17 +56,14 @@ class DruidDataSourceV2 extends DataSourceV2 with ReadSupport with WriteSupport
 
   /**
     * Create a writer to save a dataframe as a Druid table. Spark knows the partitioning information
-    * for the dataframe, but won't share. We also have only limited ways to detect issues, so for
-    * now we'll need to trust that we're passed valid input. This means that data must already be
-    * bucketed by segment granularity (e.g. each partition must contain rows from exactly one
-    * segment interval), and that each Spark partition will be written as one segment, regardless of
-    * the number of rows in the segment. Something like the DateBucketAndHashPartitioner from the
+    * for the dataframe, but won't share. Something like the DateBucketAndHashPartitioner from the
     * druid-spark-batch GitHub project can be used to ensure that all partitions have only one time
-    * bucket they're responsible for while also setting a soft upper bound on the maximum size of
-    * a segment. Longer term, we can write multiple segments per DruidDataWriter, which would mean
-    * data wouldn't be dropped if a partition contained rows from more than one segment interval,
-    * but does mean that almost all users of this writer will write out severely non-optimal
-    * segments. This also doesn't solve the problem below :/
+    * bucket they're responsible for while also setting a soft upper bound on the maximum size of a
+    * segment. Otherwise, multiple indexing segments may be stored in memory, causing memory
+    * pressure, and segments may contain up to the number of rows in a partition. We can't construct
+    * multiple partitions for the same segment interval in a single DruidDataWriter because we can't
+    * be sure we won't chose a partition number that isn't also being used for the same interval by
+    * a separate DruidDataWriter.
     *
     * Additionally, while the caller knows how many partitions there are total for each segment, we
     * don't, and so the caller will need to provide the total number of partitions if necessary for

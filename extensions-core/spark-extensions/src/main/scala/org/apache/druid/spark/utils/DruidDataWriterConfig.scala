@@ -19,9 +19,8 @@
 
 package org.apache.druid.spark.utils
 
+import org.apache.druid.java.util.common.DateTimes
 import org.apache.spark.sql.types.StructType
-import org.joda.time.chrono.ISOChronology
-import org.joda.time.{DateTime, Interval}
 
 class DruidDataWriterConfig(
                              val dataSource: String,
@@ -29,9 +28,7 @@ class DruidDataWriterConfig(
                              val partitionsCount: Int,
                              val schema: StructType,
                              val dataSchemaSerialized: String,
-                             val segmentInterval: Interval,
                              val shardSpecSerialized: String,
-                             val rollup: Boolean,
                              val rowsPerPersist: Int,
                              val deepStorageType: String,
                              val deepStorageProperties: Map[String, AnyRef],
@@ -39,7 +36,7 @@ class DruidDataWriterConfig(
                              version: Option[String] = None
                            ) extends Serializable {
   def getVersion: String = {
-    version.getOrElse(DateTime.now(ISOChronology.getInstanceUTC).toString)
+    version.getOrElse(DateTimes.nowUtc().toString)
   }
 }
 

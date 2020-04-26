@@ -38,7 +38,12 @@ object DruidDataSourceOptionKeys {
   val useCompactSketchesKey: String = "useCompactSketches" // Default: false
 
   // Writer Configs
+  val dimensionsKey: String = "dimensions"
+  val metricsKey: String = "metrics"
+  val excludedDimensionsKey: String = "excludedDimensions"
   val deepStorageTypeKey: String = "deepStorageType"
+  val timestampColumnKey: String = "timestampColumn" // Default: ts
+  val timestampFormatKey: String = "timestampFormat" // Default: auto
   val rollUpSegmentsKey: String = "rollUpSegments" // Default: false
   val rowsPerPersistKey: String = "rowsPerPersist" // Default: 2000000
 }

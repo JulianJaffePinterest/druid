@@ -114,6 +114,12 @@ object DruidDataSourceWriter {
   private[v2] def validateDataSourceOption(dataSourceOptions: DataSourceOptions): Unit = {
     assert(dataSourceOptions.tableName().isPresent,
       s"Must set ${DataSourceOptions.TABLE_KEY}!")
+    assert(
+      dataSourceOptions.get(DruidDataSourceOptionKeys.dimensionsKey).isPresent
+        || dataSourceOptions.get(DruidDataSourceOptionKeys.metricsKey).isPresent,
+      s"Must set either ${DruidDataSourceOptionKeys.dimensionsKey} or" +
+        s" ${DruidDataSourceOptionKeys.metricsKey}!"
+    )
     // TODO: default to derby?
     assert(dataSourceOptions.get(DruidDataSourceOptionKeys.metadataDbTypeKey).isPresent,
       s"Must set ${DruidDataSourceOptionKeys.metadataDbTypeKey}!"

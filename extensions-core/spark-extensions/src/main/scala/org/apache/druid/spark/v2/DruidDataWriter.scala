@@ -27,6 +27,7 @@ import java.util.{List => JList}
 import com.fasterxml.jackson.core.`type`.TypeReference
 import org.apache.commons.io.FileUtils
 import org.apache.druid.data.input.MapBasedInputRow
+import org.apache.druid.java.util.common.DateTimes
 import org.apache.druid.java.util.common.io.Closer
 import org.apache.druid.java.util.common.parsers.TimestampParser
 import org.apache.druid.segment.data.{BitmapSerdeFactory, CompressionFactory, CompressionStrategy,
@@ -45,6 +46,7 @@ import org.apache.spark.sql.sources.v2.writer.{DataWriter, WriterCommitMessage}
 
 import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsJavaMapConverter,
   seqAsJavaListConverter}
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[InternalRow] {
@@ -110,27 +112,30 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
 
   // TODO: rewrite this without using IncrementalIndex, because IncrementalIndex bears a lot of overhead
   //  to support concurrent querying, that is not needed in Spark
-  private var incrementalIndex: IncrementalIndex[_] = createInterval()
-  private val adapters: ArrayBuffer[IndexableAdapter] = ArrayBuffer.empty[IndexableAdapter]
-  private var rowsProcessed: Long = 0
+  // We may have rows for multiple intervals here, so we need to keep a map of segment start time to
+  // flushed adapters and currently incrementing indexers.
+  private val bucketToIndexMap: mutable.Map[Long,
+    (ArrayBuffer[IndexableAdapter], IncrementalIndex[_])
+    ] = mutable.HashMap[Long, (ArrayBuffer[IndexableAdapter], IncrementalIndex[_])]()
+    .withDefault(bucket => (ArrayBuffer.empty[IndexableAdapter], createInterval(bucket)))
 
   override def write(row: InternalRow): Unit = {
-    // TODO: We need to create a map from time bucket to Seq[Adapter] and create segments per time
-    //  bucket instead of assuming all rows fall within one segment. We also need to create multiple
-    //  segments per bucket based on a max rows per segment parameter. Since we don't know how many
-    //  rows we have, we'll have to fill each bucket one by one and use the final bucket for "slop"
+    val timestamp = timestampParser
+      .apply(row.get(tsColumnIndex, config.schema(tsColumnIndex).dataType)).getMillis
+    val bucket = getBucketForRow(timestamp)
+    var index = bucketToIndexMap(bucket)._2
+
     // Check index, flush if too many rows in memory and recreate
-    if (rowsProcessed == config.rowsPerPersist) {
-      adapters += flushIndex(incrementalIndex)
-      incrementalIndex.close()
-      incrementalIndex = createInterval()
-      rowsProcessed = 0
+    if (index.size() == config.rowsPerPersist) {
+      val adapters = bucketToIndexMap(bucket)._1 :+ flushIndex(index)
+      index.close()
+      bucketToIndexMap(bucket) = (adapters, createInterval(bucket))
+      index = bucketToIndexMap(bucket)._2
     }
-    incrementalIndex.add(
-      incrementalIndex.formatRow(
+    index.add(
+      index.formatRow(
         new MapBasedInputRow(
-          timestampParser
-            .apply(row.get(tsColumnIndex, config.schema(tsColumnIndex).dataType)).getMillis,
+          timestamp,
           dimensions,
           // Convert to Java types that Druid knows how to handle
           config.schema
@@ -142,10 +147,9 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
         )
       )
     )
-    rowsProcessed += 1
   }
 
-  private[v2] def createInterval(): IncrementalIndex[_] = {
+  private[v2] def createInterval(startMillis: Long): IncrementalIndex[_] = {
     new IncrementalIndex.Builder()
       .setIndexSchema(
         new IncrementalIndexSchema.Builder()
@@ -155,22 +159,22 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
           )
           .withMetrics(dataSchema.getAggregators: _*)
           .withTimestampSpec(dataSchema.getTimestampSpec)
-          .withMinTimestamp(config.segmentInterval.getStartMillis)
-          .withRollup(config.rollup)
+          .withMinTimestamp(startMillis)
+          .withRollup(dataSchema.getGranularitySpec.isRollup)
           .build()
       )
       .setMaxRowCount(config.rowsPerPersist)
       .buildOnheap()
   }
 
-  private def flushIndex(index: IncrementalIndex[_]): IndexableAdapter = {
+  private[v2] def flushIndex(index: IncrementalIndex[_]): IndexableAdapter = {
     new QueryableIndexIndexableAdapter(
       closer.register(
         DruidDataWriter.INDEX_IO.loadIndex(
           DruidDataWriter.INDEX_MERGER_V9
             .persist(
               index,
-              config.segmentInterval,
+              index.getInterval,
               tmpPersistDir,
               indexSpec,
               OnHeapMemorySegmentWriteOutMediumFactory.instance()
@@ -180,47 +184,55 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
     )
   }
 
+  private[v2] def getBucketForRow(ts: Long): Long = {
+    dataSchema.getGranularitySpec.getSegmentGranularity.bucketStart(DateTimes.utc(ts)).getMillis
+  }
+
   override def commit(): WriterCommitMessage = {
     // Return segment locations on deep storage
-    if (rowsProcessed > 0) {
-      adapters += flushIndex(incrementalIndex)
-      incrementalIndex.close()
-    }
-    val specs = if (adapters.nonEmpty) {
-      val finalStaticIndexer = DruidDataWriter.INDEX_MERGER_V9
-      val file = finalStaticIndexer.merge(
-        adapters.asJava,
-        true,
-        dataSchema.getAggregators,
-        tmpMergeDir,
-        indexSpec
-      )
-      val allDimensions: JList[String] = adapters
-        .map(_.getDimensionNames)
-        .foldLeft(Set[String]())(_ ++ _.asScala)
-        .toList
-        .asJava
-      val shardSpec = ShardSpecRegistry.createShardSpec(
-        config.shardSpecSerialized,
-        config.partitionId,
-        config.partitionsCount,
-        partitionDimensions)
-      val dataSegmentTemplate = new DataSegment(
-        config.dataSource,
-        config.segmentInterval,
-        finalVersion,
-        null,
-        allDimensions,
-        dataSchema.getAggregators.map(_.getName).toList.asJava,
-        shardSpec,
-        -1,
-        -1L
-      )
-      val finalDataSegment = pusher.push(file, dataSegmentTemplate, true)
-      Seq(DruidDataSourceV2.MAPPER.writeValueAsString(finalDataSegment))
-    } else {
-      Seq.empty
-    }
+    val specs = bucketToIndexMap.mapValues { case (adapters, index) =>
+      if (!index.isEmpty) {
+        adapters += flushIndex(index)
+        index.close()
+      }
+      if (adapters.nonEmpty) {
+        // TODO: Merge adapters up to a total number of rows, and then split into new segments.
+        //  The tricky piece will be determining the partition number for multiple segments
+        val finalStaticIndexer = DruidDataWriter.INDEX_MERGER_V9
+        val file = finalStaticIndexer.merge(
+          adapters.asJava,
+          true,
+          dataSchema.getAggregators,
+          tmpMergeDir,
+          indexSpec
+        )
+        val allDimensions: JList[String] = adapters
+          .map(_.getDimensionNames)
+          .foldLeft(Set[String]())(_ ++ _.asScala)
+          .toList
+          .asJava
+        val shardSpec = ShardSpecRegistry.createShardSpec(
+          config.shardSpecSerialized,
+          config.partitionId,
+          config.partitionsCount,
+          partitionDimensions)
+        val dataSegmentTemplate = new DataSegment(
+          config.dataSource,
+          index.getInterval,
+          finalVersion,
+          null, // scalastyle:ignore null
+          allDimensions,
+          dataSchema.getAggregators.map(_.getName).toList.asJava,
+          shardSpec,
+          -1,
+          -1L
+        )
+        val finalDataSegment = pusher.push(file, dataSegmentTemplate, true)
+        Seq(DruidDataSourceV2.MAPPER.writeValueAsString(finalDataSegment))
+      } else {
+        Seq.empty
+      }
+    }.values.toSeq.flatten
     DruidWriterCommitMessage(specs)
   }
 

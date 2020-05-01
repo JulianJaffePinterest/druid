@@ -50,6 +50,17 @@ import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsJavaMapConv
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+/**
+  * A DruidDataWriter does the actual work of writing a partition of a dataframe to files Druid
+  * knows how to read.
+  *
+  * TODO: Describe the writing logic (creating the map from bucket to flushed indexers (i.e. adapters
+  *  and the current open index), how indices are merged and pushed to deep storage, partition number
+  *  /counts concerns, etc.
+  *
+  * @param config An object holding necessary configuration settings for the writer passed along
+  *               from the driver.
+  */
 class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[InternalRow] {
   private val tmpPersistDir = Files.createTempDirectory("persist").toFile
   private val tmpMergeDir = Files.createTempDirectory("merge").toFile
@@ -112,7 +123,7 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
   )
 
   private val pusher: DataSegmentPusher = SegmentWriterRegistry.getSegmentPusher(
-    config.deepStorageType, config.deepStorageProperties
+    config.deepStorageType, config.properties
   )
 
   // TODO: rewrite this without using IncrementalIndex, because IncrementalIndex bears a lot of overhead
@@ -217,7 +228,7 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
           .toList
           .asJava
         val shardSpec = ShardSpecRegistry.createShardSpec(
-          config.shardSpecSerialized,
+          config.shardSpec,
           partitionNumMap(index.getInterval.getStartMillis)._1,
           partitionNumMap(index.getInterval.getStartMillis)._2,
           partitionDimensions)

@@ -101,6 +101,13 @@ class DruidMetadataClient(
       segments, mapper)
   }
 
+  def checkIfDataSourceExists(dataSource: String): Boolean = {
+    val dbi: DBI = connector.getDBI
+    dbi.withHandle((handle: Handle) => {
+      connector.tableExists(handle, dataSource)
+    })
+  }
+
   /**
     * This won't run in a Druid cluster, so users will need to respecify metadata connection info.
     * This also means users will need to specifically include the extension jars on their clusters.

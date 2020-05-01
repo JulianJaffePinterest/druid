@@ -25,8 +25,7 @@ import org.apache.druid.java.util.common.ISE
 import org.apache.druid.segment.loading.DataSegmentKiller
 import org.apache.druid.spark.MAPPER
 import org.apache.druid.spark.registries.SegmentWriterRegistry
-import org.apache.druid.spark.utils.{DruidClient, DruidDataSourceOptionKeys, DruidMetadataClient,
-  Logging}
+import org.apache.druid.spark.utils.{DruidDataSourceOptionKeys, DruidMetadataClient, Logging}
 import org.apache.druid.timeline.DataSegment
 import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.catalyst.InternalRow
@@ -37,17 +36,30 @@ import org.apache.spark.sql.types.StructType
 
 import scala.collection.JavaConverters.seqAsJavaListConverter
 
+/**
+  * A DruidDataSourceWriter orchestrates writing a dataframe to Druid.
+  *
+  * @param schema The schema of the dataframe to be written to Druid.
+  * @param dataSourceOptions A set of options to configure the DruidDataWriterFactories,
+  *                          DruidDataWriters, and clients used to write a dataframe to Druid
+  * @param metadataClient The client to use to read from and write to a Druid metadata server.
+  */
 class DruidDataSourceWriter(
                              schema: StructType,
-                             dataSourceOptions: DataSourceOptions
+                             dataSourceOptions: DataSourceOptions,
+                             metadataClient: DruidMetadataClient
                            ) extends DataSourceWriter with Logging {
-  private lazy val metadataClient = DruidMetadataClient(dataSourceOptions)
 
   override def createWriterFactory(): DataWriterFactory[InternalRow] = {
     new DruidDataWriterFactory(schema, dataSourceOptions)
   }
 
-  // Push segment locations (from commit messages) to metadata
+  /**
+    * Commit the segment locations listed in WRITERCOMMITMESSAGES to a Druid metadata server.
+    *
+    * @param writerCommitMessages An array of messages containing sequences of serialized
+    *                             DataSegments written to deep storage.
+    */
   override def commit(writerCommitMessages: Array[WriterCommitMessage]): Unit = {
     val segments =
       writerCommitMessages.flatMap(_.asInstanceOf[DruidWriterCommitMessage].serializedSegments)
@@ -59,6 +71,12 @@ class DruidDataSourceWriter(
   }
 
   // Clean up segments in deep storage but not in metadata
+  /**
+    * Clean up a failed write by deleting any segments already written to deep storage.
+    *
+    * @param writerCommitMessages An array of messages containing sequences of serialized
+    *                             DataSegments that have already been written to deep storage.
+    */
   override def abort(writerCommitMessages: Array[WriterCommitMessage]): Unit = {
     val segments =
       writerCommitMessages.flatMap(_.asInstanceOf[DruidWriterCommitMessage].serializedSegments)
@@ -81,45 +99,48 @@ object DruidDataSourceWriter {
              dataSourceOptions: DataSourceOptions
            ): Optional[DataSourceWriter] = {
     val dataSource = dataSourceOptions.tableName().get()
-    // TODO: Consider replacing this with a metadata client call (i.e.
-    //  `SELECT DISTINCT dataSource FROM druid_segments`) to avoid needing broker connection info
-    //  in the writer
-    val druidClient = DruidClient(dataSourceOptions)
-    val dataSourceExists = druidClient.checkIfDataSourceExists(dataSource)
+    val metadataClient = DruidMetadataClient(dataSourceOptions)
+    val dataSourceExists = metadataClient.checkIfDataSourceExists(dataSource)
     saveMode match {
       case SaveMode.Append => if (dataSourceExists) {
+        // In theory, if a caller provided an interval in the data source options, we could check
+        // to see if the interval already existed or not, and only throw an error if the data source
+        // already had data for the given interval. We'd want to also plumb that interval through to
+        // DruidDataWriter instances to make sure they dropped rows outside of the interval.
         throw new UnsupportedOperationException(
           "Druid does not support appending to existing dataSources, only reindexing!"
         )
       } else {
-        createDataSourceWriterOptional(schema, dataSourceOptions)
+        createDataSourceWriterOptional(schema, dataSourceOptions, metadataClient)
       }
-      case SaveMode.ErrorIfExists => throw new ISE(s"$dataSource already exists!")
+      case SaveMode.ErrorIfExists => if (dataSourceExists) {
+        throw new ISE(s"$dataSource already exists!")
+      } else {
+        createDataSourceWriterOptional(schema, dataSourceOptions, metadataClient)
+      }
       case SaveMode.Ignore => if (dataSourceExists) {
         Optional.empty[DataSourceWriter]
       } else {
-        createDataSourceWriterOptional(schema, dataSourceOptions)
+        createDataSourceWriterOptional(schema, dataSourceOptions, metadataClient)
       }
-      case SaveMode.Overwrite => createDataSourceWriterOptional(schema, dataSourceOptions)
+      case SaveMode.Overwrite =>
+        createDataSourceWriterOptional(schema, dataSourceOptions, metadataClient)
     }
   }
 
   private[v2] def createDataSourceWriterOptional(
                                                   schema: StructType,
-                                                  dataSourceOptions: DataSourceOptions
+                                                  dataSourceOptions: DataSourceOptions,
+                                                  metadataClient: DruidMetadataClient
                                                 ): Optional[DataSourceWriter] = {
-    Optional.of[DataSourceWriter](new DruidDataSourceWriter(schema, dataSourceOptions))
+    Optional.of[DataSourceWriter](new DruidDataSourceWriter(
+      schema, dataSourceOptions, metadataClient)
+    )
   }
 
   private[v2] def validateDataSourceOption(dataSourceOptions: DataSourceOptions): Unit = {
     assert(dataSourceOptions.tableName().isPresent,
       s"Must set ${DataSourceOptions.TABLE_KEY}!")
-    assert(
-      dataSourceOptions.get(DruidDataSourceOptionKeys.dimensionsKey).isPresent
-        || dataSourceOptions.get(DruidDataSourceOptionKeys.metricsKey).isPresent,
-      s"Must set either ${DruidDataSourceOptionKeys.dimensionsKey} or" +
-        s" ${DruidDataSourceOptionKeys.metricsKey}!"
-    )
     // TODO: default to derby?
     assert(dataSourceOptions.get(DruidDataSourceOptionKeys.metadataDbTypeKey).isPresent,
       s"Must set ${DruidDataSourceOptionKeys.metadataDbTypeKey}!"

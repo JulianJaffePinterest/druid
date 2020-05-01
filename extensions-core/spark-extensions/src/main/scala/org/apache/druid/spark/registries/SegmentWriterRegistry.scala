@@ -45,14 +45,14 @@ import scala.collection.mutable
   * A registry for functions to create DataSegmentPushers and DataSegmentKillers.
   */
 object SegmentWriterRegistry extends Logging {
-  private val registeredSegmentPusherCreatorFunctions: mutable.HashMap[String, Map[String, AnyRef] =>
+  private val registeredSegmentPusherCreatorFunctions: mutable.HashMap[String, Map[String, String] =>
     DataSegmentPusher] = new mutable.HashMap()
   private val registeredSegmentKillerCreatorFunctions: mutable.HashMap[String, DataSourceOptions =>
     DataSegmentKiller] = new mutable.HashMap()
 
   def register(
                 deepStorageType: String,
-                segmentPusherCreatorFunc: Map[String, AnyRef] => DataSegmentPusher,
+                segmentPusherCreatorFunc: Map[String, String] => DataSegmentPusher,
                 segmentKillerCreatorFunc: DataSourceOptions => DataSegmentKiller
               ): Unit = {
     registeredSegmentPusherCreatorFunctions(deepStorageType) = segmentPusherCreatorFunc
@@ -68,7 +68,7 @@ object SegmentWriterRegistry extends Logging {
 
   def getSegmentPusher(
                         deepStorageType: String,
-                        properties: Map[String, AnyRef]
+                        properties: Map[String, String]
                       ): DataSegmentPusher = {
     if (registeredSegmentPusherCreatorFunctions.contains(deepStorageType)) {
       registeredSegmentPusherCreatorFunctions(deepStorageType)(properties)
@@ -96,7 +96,7 @@ object SegmentWriterRegistry extends Logging {
         () =>
           register(
             "local",
-            (properties: Map[String, AnyRef]) =>
+            (properties: Map[String, String]) =>
               new LocalDataSegmentPusher(new LocalDataSegmentPusherConfig() {
                 override def getStorageDirectory: File =
                   new File(properties.get("storageDirectory").toString)
@@ -116,7 +116,7 @@ object SegmentWriterRegistry extends Logging {
         () =>
           register(
             "hdfs",
-            (properties: Map[String, AnyRef]) =>
+            (properties: Map[String, String]) =>
               new HdfsDataSegmentPusher(
                 MAPPER.readValue[HdfsDataSegmentPusherConfig](
                   properties.get("hdfsPusherConfig").toString,
@@ -141,7 +141,7 @@ object SegmentWriterRegistry extends Logging {
       "s3" -> (
         () => register(
           "s3",
-          (properties: Map[String, AnyRef]) =>
+          (properties: Map[String, String]) =>
             new S3DataSegmentPusher(
               MAPPER.readValue[ServerSideEncryptingAmazonS3](
                 properties.get("s3ServerSideEncryptionConfig").toString,
@@ -171,7 +171,7 @@ object SegmentWriterRegistry extends Logging {
       "google" -> (
         () => register(
           "google",
-          (properties: Map[String, AnyRef]) =>
+          (properties: Map[String, String]) =>
           new GoogleDataSegmentPusher(
             MAPPER.readValue[GoogleStorage](
               properties.get("googleStorageConfig").toString,
@@ -202,7 +202,7 @@ object SegmentWriterRegistry extends Logging {
       "azure" -> (
         () => register(
           "azure",
-          (properties: Map[String, AnyRef]) =>
+          (properties: Map[String, String]) =>
             new AzureDataSegmentPusher(
               MAPPER.readValue[AzureStorage](
                 properties.get("azureStorageConfig").toString,

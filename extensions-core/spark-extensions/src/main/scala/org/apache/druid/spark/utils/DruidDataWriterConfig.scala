@@ -26,17 +26,15 @@ class DruidDataWriterConfig(
                              val partitionId: Int,
                              val schema: StructType,
                              val dataSchemaSerialized: String,
-                             val shardSpecSerialized: String,
+                             val shardSpec: String,
                              val rowsPerPersist: Int,
                              val deepStorageType: String,
-                             val deepStorageProperties: Map[String, AnyRef],
                              val properties: Map[String, String],
                              val version: String,
                              val partitionMap: Option[Map[Int, Map[Long, (Int, Int)]]] = None
-                           ) extends Serializable {}
+                           ) extends Serializable
 
 object DruidDataWriterConfig {
-  //
   val partitionDimensionsKey: String = "partitionDimensions"
 
   // IndexSpec keys

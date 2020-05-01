@@ -17,22 +17,22 @@
  * under the License.
  */
 
-package org.apache.druid.spark
+package org.apache.druid.spark.registries
 
-import org.apache.druid.segment.{IndexIO, IndexMergerV9}
-import org.apache.druid.segment.writeout.OnHeapMemorySegmentWriteOutMediumFactory
+import com.fasterxml.jackson.databind.jsontype.NamedType
+import org.apache.druid.query.aggregation.AggregatorFactory
+import org.apache.druid.spark.MAPPER
 
-package object v2 { // scalastyle:ignore package.object.name
+/**
+  * A registry for aggregator factories. Since this is only to support deserialization when
+  * constructing an AggregatorFactory[] in DruidDataWriterFactory, we can shadow the usual Druid
+  * pattern and let Jackson handle the polymorphism. If we ever need to instantiate
+  * AggregatorFactories ourselves, this will have to be changed.
+  */
+object AggregatorFactoryRegistry {
+  def register(name: String, factory: AggregatorFactory): Unit = {
+    // Cheat
+    MAPPER.registerSubtypes(new NamedType(factory.getClass, name))
+  }
 
-
-  val INDEX_IO = new IndexIO(
-    MAPPER,
-    () => 1000000
-  )
-
-  val INDEX_MERGER_V9 = new IndexMergerV9(
-    MAPPER,
-    INDEX_IO,
-    OnHeapMemorySegmentWriteOutMediumFactory.instance()
-  )
 }

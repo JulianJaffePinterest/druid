@@ -172,7 +172,7 @@ object ComplexMetricRegistry extends Logging {
           if (shouldCompact) hllSketch.toCompactByteArray else hllSketch.toUpdatableByteArray
         }
       )),
-    //Theta Sketches
+    // Theta Sketches
     SketchModule.THETA_SKETCH -> ((shouldCompact: Boolean) =>
       register(
         SketchModule.THETA_SKETCH,

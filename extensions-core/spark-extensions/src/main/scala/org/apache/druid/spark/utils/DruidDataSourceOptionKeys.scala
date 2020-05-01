@@ -48,6 +48,7 @@ object DruidDataSourceOptionKeys {
   val deepStorageTypeKey: String = "deepStorageType" // Default: local
   val timestampColumnKey: String = "timestampColumn" // Default: ts
   val timestampFormatKey: String = "timestampFormat" // Default: auto
+  val shardSpecTypeKey: String = "shardSpecType" // Default: linear
   val rollUpSegmentsKey: String = "rollUpSegments" // Default: false
   val rowsPerPersistKey: String = "rowsPerPersist" // Default: 2000000
 }

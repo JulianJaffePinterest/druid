@@ -87,7 +87,7 @@ class DruidClient(
       ).asJava)
       .build()
     val response = sendRequestWithRetry(
-      druidBaseQueryURL(hostAndPort), objectMapper.writeValueAsBytes(body), RETRY_COUNT
+      druidBaseQueryURL(hostAndPort), RETRY_COUNT, Option(objectMapper.writeValueAsBytes(body))
     )
     val segments =
       objectMapper.readValue[JList[SegmentAnalysis]](
@@ -114,7 +114,7 @@ class DruidClient(
     * @return True iff DATASOURCE exists on the cluster
     */
   def checkIfDataSourceExists(dataSource: String): Boolean = {
-    val response = sendGetRequestWithRetry(
+    val response = sendRequestWithRetry(
       s"${druidBaseQueryURL(hostAndPort)}datasources", RETRY_COUNT
     )
     val dataSources = objectMapper.readValue[JList[String]](
@@ -125,7 +125,9 @@ class DruidClient(
   }
 
   private def sendRequestWithRetry(
-                                    url: String, content: Array[Byte], retryCount: Int
+                                    url: String,
+                                    retryCount: Int,
+                                    content: Option[Array[Byte]] = None
                                   ): StringFullResponseHolder = {
     try {
       sendRequest(url, content)
@@ -134,14 +136,14 @@ class DruidClient(
         if (retryCount > 0) {
           logInfo(s"Got exception: ${e.getMessage}, retrying ...")
           Thread sleep RETRY_WAIT_SECONDS * 1000
-          sendRequestWithRetry(url, content, retryCount - 1)
+          sendRequestWithRetry(url, retryCount - 1, content)
         } else {
           throw e
         }
     }
   }
 
-  private def sendRequest(url: String, content: Array[Byte]): StringFullResponseHolder = {
+  private def sendRequest(url: String, content: Option[Array[Byte]]): StringFullResponseHolder = {
     try {
       val request = buildRequest(url, content)
       var response = httpClient.go(
@@ -171,64 +173,19 @@ class DruidClient(
     }
   }
 
-  private def buildRequest(url: String, content: Array[Byte]): Request = {
-    new Request(HttpMethod.POST, new URL(url))
-      .setHeader("Content-Type", MediaType.APPLICATION_JSON)
-      .setContent(content)
-  }
-
-  private def sendGetRequestWithRetry(url: String, retryCount: Int): StringFullResponseHolder = {
-
-    try {
-      sendGetRequest(url)
-    } catch {
-      case e: Exception =>
-        if (retryCount > 0) {
-          logInfo(s"Got exception: ${e.getMessage}, retrying ...")
-          Thread sleep RETRY_WAIT_SECONDS * 1000
-          sendGetRequestWithRetry(url, retryCount - 1)
-        } else {
-          throw e
-        }
-    }
-  }
-
-  private def sendGetRequest(url: String): StringFullResponseHolder = {
-    try {
-      val request = buildGetRequest(url)
-      var response = httpClient.go(
-        request,
-        new StringFullResponseHandler(StringUtils.UTF8_CHARSET),
-        Duration.millis(TIMEOUT_MILLISECONDS)
-      ).get
-      if (response.getStatus == HttpResponseStatus.TEMPORARY_REDIRECT) {
-        val newUrl = response.getResponse.headers().get("Location")
-        logInfo(s"Got a redirect, new location: $newUrl")
-        response = httpClient.go(
-          buildGetRequest(url), new StringFullResponseHandler(StringUtils.UTF8_CHARSET)
-        ).get
-      }
-      if (!(response.getStatus == HttpResponseStatus.OK)) {
-        throw new ISE(
-          s"Error getting response for %s, status[%s] content[%s]",
-          url,
-          response.getStatus,
-          response.getContent
-        )
-      }
-      response
-    } catch {
-      case e: Exception =>
-        throw e
-    }
-  }
-
-  private def buildGetRequest(url: String): Request = {
-    new Request(HttpMethod.GET, new URL(url))
+  def buildRequest(url: String, content: Option[Array[Byte]]): Request = {
+    content.map(
+      new Request(HttpMethod.POST, new URL(url))
+        .setHeader("Content-Type", MediaType.APPLICATION_JSON)
+        .setContent(_)
+    ).getOrElse(
+      new Request(HttpMethod.GET, new URL(url))
+    )
   }
 }
 
 object DruidClient {
+  // TODO: Add support for Kerberized etc. clients
   def apply(dataSourceOptions: DataSourceOptions): DruidClient = {
     new DruidClient(
       HttpClientHolder.create.get,

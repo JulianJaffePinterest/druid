@@ -104,7 +104,14 @@ class DruidMetadataClient(
   def checkIfDataSourceExists(dataSource: String): Boolean = {
     val dbi: DBI = connector.getDBI
     dbi.withHandle((handle: Handle) => {
-      connector.tableExists(handle, dataSource)
+      val statement =
+        s"""
+           |SELECT DISTINCT dataSource FROM ${druidMetadataTableConfig.getSegmentsTable}
+           |WHERE used = 1
+         """.stripMargin
+      val query = handle.createQuery(statement)
+      val result = query.mapTo(classOf[String]).list().asScala
+      result.contains(dataSource)
     })
   }
 

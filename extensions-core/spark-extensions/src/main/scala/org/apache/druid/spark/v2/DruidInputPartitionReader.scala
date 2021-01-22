@@ -47,7 +47,7 @@ import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, DoubleType, 
 import org.apache.spark.unsafe.types.UTF8String
 
 import scala.collection.JavaConverters.{collectionAsScalaIterableConverter,
-  iterableAsScalaIterableConverter, seqAsJavaListConverter}
+  iterableAsScalaIterableConverter, seqAsJavaListConverter, setAsJavaSetConverter}
 
 class DruidInputPartitionReader(segmentStr: String,
                                 schema: StructType,
@@ -172,7 +172,7 @@ object DruidInputPartitionReader {
       case Not(condition) =>
         new NotDimFilter(mapFilter(condition))
       case In(field, values) =>
-        new InDimFilter(field, values.map(_.toString).toList.asJava, null, null)
+        new InDimFilter(field, values.map(_.toString).toSet.asJava, null, null)
       case StringContains(field, value) =>
         // Not 100% sure what Spark's expectations are for regex, case insensitive, etc.
         // and not sure the relative efficiency of various Druid dim filters

@@ -32,9 +32,10 @@ object DruidDataSourceOptionKeys {
 
   // Druid Client Configs
   val brokerHostKey: String = "brokerHost" // Default: localhost
-  val brokerPortKey: String = "brokerKey" // Default: 8082
+  val brokerPortKey: String = "brokerPort" // Default: 8082
 
   // Reader Configs
+  val segmentsKey: String = "segments"
   val useCompactSketchesKey: String = "useCompactSketches" // Default: false
 
   // Writer Configs
@@ -49,6 +50,6 @@ object DruidDataSourceOptionKeys {
   val timestampColumnKey: String = "timestampColumn" // Default: ts
   val timestampFormatKey: String = "timestampFormat" // Default: auto
   val shardSpecTypeKey: String = "shardSpecType" // Default: linear
-  val rollUpSegmentsKey: String = "rollUpSegments" // Default: false
+  val rollUpSegmentsKey: String = "rollUpSegments" // Default: true
   val rowsPerPersistKey: String = "rowsPerPersist" // Default: 2000000
 }

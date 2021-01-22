@@ -61,7 +61,7 @@ class SparkFunSuite extends AnyFunSuite with BeforeAndAfterEach {
   override def beforeEach(): Unit = {
     setupSparkContextAndSession()
 
-    // This isn't necessary for any test to work, but it suppreses log spam when loading segment
+    // This isn't necessary for any test to work, but it suppresses log spam when loading segment
     // metadata while reading data
     val jacksonModules = Seq(new SketchModule)
     MAPPER.registerModules(jacksonModules.flatMap(_.getJacksonModules.asScala.toList).asJava)

@@ -69,10 +69,15 @@ object ShardSpecRegistry extends Logging {
                      partitionId: Int,
                      partitionsCount: Int,
                      partitionDimensions: Option[List[String]]) =>
+        // TODO: Blindly adding null for new nullable arguments. In the future, we should take advantage of these new
+        //  properties and possibly sidestep the partitioning problem created by our lack of knowledge at write time.
         new HashBasedNumberedShardSpec(
           partitionId,
           partitionsCount,
+          null,
+          null,
           partitionDimensions.map(_.asJava).orNull,
+          null,
         MAPPER)),
       "linear" -> ((partitionId: Int, _: Int, _: Option[List[String]]) =>
         new LinearShardSpec(partitionId)),

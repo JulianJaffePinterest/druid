@@ -35,17 +35,21 @@ import org.apache.druid.spark.utils.Logging
 
 import scala.collection.mutable
 
+/**
+ * A registry for plugging in support for Druid complex metric types. Provides definitions for supporting complex types
+ * in extensions-core out of the box.
+ */
 object ComplexMetricRegistry extends Logging {
   private val registeredSerdeFunctions: mutable.HashMap[String, () => Unit] = new mutable.HashMap()
-  private val registeredDeserializeFunctions: mutable.HashMap[Class[_], Any => Array[Byte]] =
+  private val registeredSerializeFunctions: mutable.HashMap[Class[_], Any => Array[Byte]] =
     new mutable.HashMap()
 
   /**
-    * Register a serde function REGISTERSERDEFUNC for the complex metric with the type name NAME.
-    * Assumes that the associated complex metric is serialized as a byte array.
+    * Register a function REGISTERSERDEFUNC that initializes serializers and deserializers for the complex metric with
+    * the type name NAME. Assumes that the associated complex metric is serialized as a byte array.
     *
-    * @param name
-    * @param registerSerdeFunc
+    * @param name The type name of the complex metric to register.
+    * @param registerSerdeFunc The function to use to register the necessary serdes for this complex metric type.
     */
   def register(
                 name: String,
@@ -55,27 +59,31 @@ object ComplexMetricRegistry extends Logging {
   }
 
   /**
+    * Register a function REGISTERSERDEFUNC that initializes serializers and deserializers, a class DESERIALIZEDCLASS
+    * to deserialize byte arrays into, and a function SERIALIZEFUNC for converting from instances of DESERIALIZEDCLASS
+    * to byte arrays for the complex metric with the type name NAME. Assumes that the associated complex metric is
+    * serialized as a byte array.
     *
-    *
-    * @param name
-    * @param registerSerdeFunc
-    * @param serializedClass
-    * @param deserializeFunc
+    * @param name The type name of the complex metric to register.
+    * @param registerSerdeFunc The function to use to register the necessary serdes for this complex metric type.
+    * @param deserializedClass The class to deserialize complex metrics of the registered type to from byte arrays.
+    * @param serializeFunc The function to use when serializing instances of DESERIALIZEDCLASS to byte arrays.
     */
   def register(
                 name: String,
                 registerSerdeFunc: () => Unit,
-                serializedClass: Class[_],
-                deserializeFunc: Any => Array[Byte]): Unit = {
+                deserializedClass: Class[_],
+                serializeFunc: Any => Array[Byte]): Unit = {
     registeredSerdeFunctions(name) = registerSerdeFunc
-    registeredDeserializeFunctions(serializedClass) = deserializeFunc
+    registeredSerializeFunctions(deserializedClass) = serializeFunc
   }
 
   /**
     * Shortcut for registering known complex metric serdes (e.g. those in extensions-core) by name.
     *
-    * @param name
-    * @param shouldCompact
+    * @param name The type name of the complex metric to register.
+    * @param shouldCompact Whether or not to store compacted versions of this complex metric. Ignored for complex metric
+   *                      type that don't have compacted forms.
     */
   def registerByName(name: String, shouldCompact: Boolean = false): Unit = {
     if (!registeredSerdeFunctions.contains(name) && knownMetrics.contains(name)) {
@@ -88,7 +96,7 @@ object ComplexMetricRegistry extends Logging {
   }
 
   def getRegisteredSerializedClasses: Set[Class[_]] = {
-    registeredDeserializeFunctions.keySet.toSet
+    registeredSerializeFunctions.keySet.toSet
   }
 
   def registerSerde(serdeName: String): Unit = {
@@ -98,8 +106,8 @@ object ComplexMetricRegistry extends Logging {
   }
 
   def deserialize(col: Any): Array[Byte] = {
-    if (registeredDeserializeFunctions.keySet.contains(col.getClass)) {
-      registeredDeserializeFunctions(col.getClass)(col)
+    if (registeredSerializeFunctions.keySet.contains(col.getClass)) {
+      registeredSerializeFunctions(col.getClass)(col)
     } else {
       throw new IllegalArgumentException(
         s"Unsure how to parse ${col.getClass.toString} into a ByteArray!"

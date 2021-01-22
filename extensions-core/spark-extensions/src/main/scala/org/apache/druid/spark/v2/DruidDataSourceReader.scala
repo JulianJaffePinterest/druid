@@ -43,13 +43,16 @@ import org.joda.time.Interval
 import scala.collection.JavaConverters.{asScalaBufferConverter, seqAsJavaListConverter}
 
 /**
-  * //
-  * //
+  * A DruidDataSourceReader handles the actual work of reading data from Druid. It does this by querying to determine
+  * where Druid segments live in deep storage and then reading those segments into memory in order to avoid straining
+  * the Druid cluster. In general, users should not directly instantiate instances of this class but instead use
+  * sparkSession.read.format("druid").options(Map(...)).load(). If the schema of the data in Druid is known, overhead
+  * can be further reduced by providing it directly (e.g. sparkSession.read.format("druid").schema(schema).options...)
   *
   * To aid comprehensibility, some idiomatic Scala has been somewhat java-fied.
   *
-  *
   * @param schema
+  * @param dataSourceOptions
   */
 class DruidDataSourceReader(
                              var schema: Option[StructType] = None,
@@ -95,9 +98,9 @@ class DruidDataSourceReader(
     val useCompactSketches =
       dataSourceOptions.get(DruidDataSourceOptionKeys.useCompactSketchesKey).isPresent
     // Allow passing hard-coded list of segments to load
-    if (dataSourceOptions.get("segments").isPresent) {
+    if (dataSourceOptions.get(DruidDataSourceOptionKeys.segmentsKey).isPresent) {
       val segments: JList[DataSegment] = MAPPER.readValue(
-        dataSourceOptions.get("segments").get(),
+        dataSourceOptions.get(DruidDataSourceOptionKeys.segmentsKey).get(),
         new TypeReference[JList[DataSegment]]() {})
       segments.asScala
         .map(

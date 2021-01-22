@@ -31,6 +31,10 @@ import org.apache.druid.spark.utils.Logging
 
 import scala.collection.mutable
 
+/**
+ * A registry for plugging in support for connectors to Druid metadata servers. Supports mysql, postgres, and derby out
+ * of the box.
+ */
 object SQLConnectorRegistry extends Logging {
   private val registeredSQLConnectorFunctions:mutable.HashMap[String,
     (Supplier[MetadataStorageConnectorConfig], Supplier[MetadataStorageTablesConfig]) =>

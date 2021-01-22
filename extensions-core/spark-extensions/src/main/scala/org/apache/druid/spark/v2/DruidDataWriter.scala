@@ -21,20 +21,17 @@ package org.apache.druid.spark.v2
 
 
 import java.io.Closeable
-import java.nio.file.Files
 import java.util.{List => JList}
 
 import com.fasterxml.jackson.core.`type`.TypeReference
-import org.apache.commons.io.FileUtils
 import org.apache.druid.data.input.MapBasedInputRow
-import org.apache.druid.java.util.common.DateTimes
+import org.apache.druid.java.util.common.{DateTimes, FileUtils}
 import org.apache.druid.java.util.common.io.Closer
 import org.apache.druid.java.util.common.parsers.TimestampParser
 import org.apache.druid.segment.data.{BitmapSerdeFactory, CompressionFactory, CompressionStrategy,
   ConciseBitmapSerdeFactory, RoaringBitmapSerdeFactory}
-import org.apache.druid.segment.{IndexSpec, IndexableAdapter,
-  QueryableIndexIndexableAdapter}
-import org.apache.druid.segment.incremental.{IncrementalIndex, IncrementalIndexSchema}
+import org.apache.druid.segment.{IndexSpec, IndexableAdapter, QueryableIndexIndexableAdapter}
+import org.apache.druid.segment.incremental.{IncrementalIndex, IncrementalIndexSchema, OnheapIncrementalIndex}
 import org.apache.druid.segment.indexing.DataSchema
 import org.apache.druid.segment.loading.DataSegmentPusher
 import org.apache.druid.segment.writeout.OnHeapMemorySegmentWriteOutMediumFactory
@@ -45,14 +42,14 @@ import org.apache.druid.timeline.DataSegment
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.sources.v2.writer.{DataWriter, WriterCommitMessage}
 
-import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsJavaMapConverter,
-  seqAsJavaListConverter}
+import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsJavaMapConverter, seqAsJavaListConverter}
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 /**
   * A DruidDataWriter does the actual work of writing a partition of a dataframe to files Druid
-  * knows how to read.
+  * knows how to read. Users should not use this class directly but should instead call write() on their dataframe
+  * (e.g. df.write.format("druid").options(Map[String, String](...)).save()).
   *
   * TODO: Describe the writing logic (creating the map from bucket to flushed indexers (i.e. adapters
   *  and the current open index), how indices are merged and pushed to deep storage, partition number
@@ -62,8 +59,8 @@ import scala.collection.mutable.ArrayBuffer
   *               from the driver.
   */
 class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[InternalRow] {
-  private val tmpPersistDir = Files.createTempDirectory("persist").toFile
-  private val tmpMergeDir = Files.createTempDirectory("merge").toFile
+  private val tmpPersistDir = FileUtils.createTempDir("persist")
+  private val tmpMergeDir = FileUtils.createTempDir("merge")
   private val closer = Closer.create()
   closer.register(
     new Closeable {
@@ -166,7 +163,9 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
   }
 
   private[v2] def createInterval(startMillis: Long): IncrementalIndex[_] = {
-    new IncrementalIndex.Builder()
+    // Using OnHeapIncrementalIndex to minimize changes when migrating from IncrementalIndex. In the future, this should
+    // be optimized further. See https://github.com/apache/druid/issues/10321 for more information.
+    new OnheapIncrementalIndex.Builder()
       .setIndexSchema(
         new IncrementalIndexSchema.Builder()
           .withDimensionsSpec(dataSchema.getDimensionsSpec)
@@ -180,7 +179,7 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
           .build()
       )
       .setMaxRowCount(config.rowsPerPersist)
-      .buildOnheap()
+      .build()
   }
 
   private[v2] def flushIndex(index: IncrementalIndex[_]): IndexableAdapter = {
@@ -220,7 +219,8 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
           true,
           dataSchema.getAggregators,
           tmpMergeDir,
-          indexSpec
+          indexSpec,
+          -1 // TODO: Make maxColumnsToMerge configurable
         )
         val allDimensions: JList[String] = adapters
           .map(_.getDimensionNames)

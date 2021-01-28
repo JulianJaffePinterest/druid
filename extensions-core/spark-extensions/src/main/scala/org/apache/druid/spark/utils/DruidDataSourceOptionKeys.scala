@@ -52,4 +52,33 @@ object DruidDataSourceOptionKeys {
   val shardSpecTypeKey: String = "shardSpecType" // Default: linear
   val rollUpSegmentsKey: String = "rollUpSegments" // Default: true
   val rowsPerPersistKey: String = "rowsPerPersist" // Default: 2000000
+
+  // Local SegmentWriter Configs
+  val localDeepStorageTypeKey: String = "local"
+  val localStorageDirectoryKey: String = "storageDirectory"
+
+  // HDFS SegmentWriter Configs
+  val hdfsDeepStorageTypeKey: String = "hdfs"
+  val hdfsHadoopConfKey: String = "hadoopConf"
+  val hdfsPusherConfigKey: String = "hdfsPusherConfig"
+
+  // S3 SegmentWriter Configs
+  val s3DeepStorageTypeKey: String = "s3"
+  val s3ServerSideEncryptionConfigKey: String = "s3ServerSideEncryptionConfig"
+  val s3DataSegmentPusherConfigKey: String = "s3DataSegmentPusherConfig"
+  val s3InputDataConfigKey: String = "s3InputDataConfig"
+
+  // Google SegmentWriter Configs
+  val googleDeepStorageTypeKey: String = "google"
+  val googleStorageConfigKey: String = "googleStorageConfig"
+  val googleAccountConfigKey: String = "googleAccountConfig"
+  val googleInputDataConfigKey: String = "googleInputDataConfig"
+
+  // Azure SegmentWriter Configs
+  val azureDeepStorageKey: String = "azure"
+  val azureStorageConfigKey: String = "azureStorageConfig"
+  val azureAccountConfigKey: String = "azureAccountConfig"
+  val azureDataSegmentConfigKey: String = "azureDataSegmentConfig"
+  val azureInputDataConfigKey: String = "azureInputDataConfig"
+  val azureCloudBlobIterableFactoryConfigKey: String = "azureCloudBlobIterableFactoryConfig"
 }

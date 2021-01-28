@@ -191,6 +191,26 @@ object ComplexMetricRegistry extends Logging {
           if (shouldCompact) thetaSketch.compact().toByteArray else thetaSketch.toByteArray
         }
       )),
+    SketchModule.THETA_SKETCH_BUILD_AGG -> ((shouldCompact: Boolean) =>
+      register(
+        SketchModule.THETA_SKETCH_BUILD_AGG,
+        () => SketchModule.registerSerde(),
+        classOf[SketchHolder], // TODO: Maybe?
+        sketch => {
+          val thetaSketch = sketch.asInstanceOf[SketchHolder].getSketch
+          if (shouldCompact) thetaSketch.compact().toByteArray else thetaSketch.toByteArray
+        }
+      )),
+    SketchModule.THETA_SKETCH_MERGE_AGG -> ((shouldCompact: Boolean) =>
+      register(
+        SketchModule.THETA_SKETCH_MERGE_AGG,
+        () => SketchModule.registerSerde(),
+        classOf[SketchHolder], // TODO: Maybe?
+        sketch => {
+          val thetaSketch = sketch.asInstanceOf[SketchHolder].getSketch
+          if (shouldCompact) thetaSketch.compact().toByteArray else thetaSketch.toByteArray
+        }
+      )),
     // Variance
     "variance" -> ((_: Boolean) =>
       register(

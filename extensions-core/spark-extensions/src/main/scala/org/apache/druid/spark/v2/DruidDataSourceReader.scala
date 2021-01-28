@@ -70,7 +70,7 @@ class DruidDataSourceReader(
     if (schema.isDefined) {
       schema.get
     } else {
-      assert(dataSourceOptions.tableName().isPresent,
+      require(dataSourceOptions.tableName().isPresent,
         s"Must set ${DataSourceOptions.TABLE_KEY}!")
       // TODO: Optionally accept a granularity so that if lowerBound to upperBound spans more than
       //  twice the granularity duration, we can send a list with two disjoint intervals and
@@ -103,9 +103,9 @@ class DruidDataSourceReader(
         dataSourceOptions.get(DruidDataSourceOptionKeys.segmentsKey).get(),
         new TypeReference[JList[DataSegment]]() {})
       segments.asScala
-        .map(
+        .map(segment =>
           new DruidInputPartition(
-            _,
+            segment,
             schema.get,
             filters,
             druidColumnTypes,
@@ -114,9 +114,9 @@ class DruidDataSourceReader(
         ).asJava
     } else {
       getSegments
-        .map(
+        .map(segment=>
           new DruidInputPartition(
-            _,
+            segment,
             schema.get,
             filters,
             druidColumnTypes,
@@ -161,7 +161,7 @@ class DruidDataSourceReader(
   }
 
   private[v2] def getSegments: Seq[DataSegment] = {
-    assert(dataSourceOptions.tableName().isPresent,
+    require(dataSourceOptions.tableName().isPresent,
       s"Must set ${DataSourceOptions.TABLE_KEY}!")
 
     // Check filters for any bounds on __time

@@ -25,9 +25,10 @@ import java.util.{List => JList}
 
 import com.fasterxml.jackson.core.`type`.TypeReference
 import org.apache.druid.data.input.MapBasedInputRow
-import org.apache.druid.java.util.common.{DateTimes, FileUtils}
+import org.apache.druid.java.util.common.{DateTimes, FileUtils, Intervals}
 import org.apache.druid.java.util.common.io.Closer
 import org.apache.druid.java.util.common.parsers.TimestampParser
+import org.apache.druid.segment.column.ValueType
 import org.apache.druid.segment.data.{BitmapSerdeFactory, CompressionFactory, CompressionStrategy,
   ConciseBitmapSerdeFactory, RoaringBitmapSerdeFactory}
 import org.apache.druid.segment.{IndexSpec, IndexableAdapter, QueryableIndexIndexableAdapter}
@@ -36,11 +37,13 @@ import org.apache.druid.segment.indexing.DataSchema
 import org.apache.druid.segment.loading.DataSegmentPusher
 import org.apache.druid.segment.writeout.OnHeapMemorySegmentWriteOutMediumFactory
 import org.apache.druid.spark.MAPPER
-import org.apache.druid.spark.registries.{SegmentWriterRegistry, ShardSpecRegistry}
-import org.apache.druid.spark.utils.DruidDataWriterConfig
+import org.apache.druid.spark.registries.{ComplexMetricRegistry, SegmentWriterRegistry, ShardSpecRegistry}
+import org.apache.druid.spark.utils.{DruidDataWriterConfig, Logging}
 import org.apache.druid.timeline.DataSegment
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.UnsafeArrayData
 import org.apache.spark.sql.sources.v2.writer.{DataWriter, WriterCommitMessage}
+import org.apache.spark.sql.types.ArrayType
 
 import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsJavaMapConverter, seqAsJavaListConverter}
 import scala.collection.mutable
@@ -58,7 +61,7 @@ import scala.collection.mutable.ArrayBuffer
   * @param config An object holding necessary configuration settings for the writer passed along
   *               from the driver.
   */
-class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[InternalRow] {
+class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[InternalRow] with Logging {
   private val tmpPersistDir = FileUtils.createTempDir("persist")
   private val tmpMergeDir = FileUtils.createTempDir("merge")
   private val closer = Closer.create()
@@ -79,7 +82,7 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
   private val partitionDimensions: Option[List[String]] = config
     .properties.get(DruidDataWriterConfig.partitionDimensionsKey).map(_.split(',').toList)
   private val tsColumn: String = dataSchema.getTimestampSpec.getTimestampColumn
-  private val tsColumnIndex = config.schema.indexOf(tsColumn)
+  private val tsColumnIndex = config.schema.fieldIndex(tsColumn)
   private val timestampParser = TimestampParser
     .createObjectTimestampParser(dataSchema.getTimestampSpec.getTimestampFormat)
 
@@ -119,6 +122,19 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
     )
   )
 
+  private val complexColumnTypes = {
+    dataSchema.getAggregators.toSeq.filter(_.getType == ValueType.COMPLEX).map(_.getComplexTypeName)
+  }
+
+  if (complexColumnTypes.nonEmpty) {
+    // Callers will need to explicitly register any complex metrics not known to ComplexMetricRegistry by default
+    complexColumnTypes.foreach {
+      ComplexMetricRegistry.registerByName(_, config.writeCompactSketches)
+    }
+  }
+  ComplexMetricRegistry.registerSerdes()
+  SegmentWriterRegistry.registerByType(config.deepStorageType)
+
   private val pusher: DataSegmentPusher = SegmentWriterRegistry.getSegmentPusher(
     config.deepStorageType, config.properties
   )
@@ -136,6 +152,9 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
     val timestamp = timestampParser
       .apply(row.get(tsColumnIndex, config.schema(tsColumnIndex).dataType)).getMillis
     val bucket = getBucketForRow(timestamp)
+    // Scala MutableMaps don't have a computeIfAbsent equivalent, so this is either a logical no-op or it creates the
+    // entry following the function defined in the map's .withDefault declaration
+    bucketToIndexMap(bucket) = bucketToIndexMap(bucket)
     var index = bucketToIndexMap(bucket)._2
 
     // Check index, flush if too many rows in memory and recreate
@@ -152,10 +171,12 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
           dimensions,
           // Convert to Java types that Druid knows how to handle
           config.schema
-            .map(field => field.name -> row.get(config.schema.indexOf(field), field.dataType)).toMap
+            .map(field => field.name -> (field.dataType, row.get(config.schema.indexOf(field), field.dataType))).toMap
             .mapValues {
-              case traversable: Traversable[_] => traversable.toSeq.asJava
-              case x => x
+              case (_, traversable: Traversable[_]) => traversable.toSeq.asJava
+              case (dataType, unsafe: UnsafeArrayData) =>
+                (0 until unsafe.numElements()).map(unsafe.get(_, dataType.asInstanceOf[ArrayType].elementType)).asJava
+              case (_, x) => x
             }.asJava
         )
       )
@@ -205,7 +226,7 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
 
   override def commit(): WriterCommitMessage = {
     // Return segment locations on deep storage
-    val specs = bucketToIndexMap.mapValues { case (adapters, index) =>
+    val specs = bucketToIndexMap.values.map { case (adapters, index) =>
       if (!index.isEmpty) {
         adapters += flushIndex(index)
         index.close()
@@ -227,28 +248,32 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
           .foldLeft(Set[String]())(_ ++ _.asScala)
           .toList
           .asJava
+        val interval = adapters.map(_.getDataInterval)
+          .reduce((l, r) => Intervals.utc(
+            Math.min(l.getStartMillis, r.getStartMillis), Math.max(l.getEndMillis, r.getEndMillis)
+          ))
         val shardSpec = ShardSpecRegistry.createShardSpec(
           config.shardSpec,
-          partitionNumMap(index.getInterval.getStartMillis)._1,
-          partitionNumMap(index.getInterval.getStartMillis)._2,
+          partitionNumMap(interval.getStartMillis)._1,
+          partitionNumMap(interval.getStartMillis)._2,
           partitionDimensions)
         val dataSegmentTemplate = new DataSegment(
           config.dataSource,
-          index.getInterval,
+          dataSchema.getGranularitySpec.getSegmentGranularity.bucket(DateTimes.utc(interval.getStartMillis)),
           config.version,
           null, // scalastyle:ignore null
           allDimensions,
           dataSchema.getAggregators.map(_.getName).toList.asJava,
           shardSpec,
           -1,
-          -1L
+          0L
         )
         val finalDataSegment = pusher.push(file, dataSegmentTemplate, true)
         Seq(MAPPER.writeValueAsString(finalDataSegment))
       } else {
         Seq.empty
       }
-    }.values.toSeq.flatten
+    }.toSeq.flatten
     DruidWriterCommitMessage(specs)
   }
 

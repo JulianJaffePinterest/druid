@@ -29,7 +29,8 @@ import org.apache.druid.spark.MAPPER
 import scala.collection.mutable
 
 /**
-  * A registry for functions to translate a "load spec" into a URI for pulling onto an executor.
+  * A registry for functions to translate a "load spec" into a URI for pulling onto an executor. `loadSpecType` must
+  * match the LoadSpec's type name exactly.
   * Note that DataSegment#getLoadSpec returns a Map<String, Object>, not an actual LoadSpec object.
   */
 object SegmentReaderRegistry extends Logging {

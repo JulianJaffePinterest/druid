@@ -78,16 +78,18 @@ class DruidMetadataClient(
       val statement =
         s"""
           |SELECT payload FROM ${druidMetadataTableConfig.getSegmentsTable}
-          |WHERE datasource = :datasource AND start >= :start AND end <= :end AND used = 1
+          |WHERE datasource = :datasource AND start >= :start AND \"end\" <= :end AND used = true
         """.stripMargin
       val query = handle.createQuery(statement)
       val result = query
           .bind("datasource", datasource)
           .bind("start", startTime)
           .bind("end", endTime)
-          .mapTo(classOf[String]).list().asScala
-      result.map(m =>
-        MAPPER.readValue[DataSegment](m, new TypeReference[DataSegment] {})
+          .mapTo(classOf[Array[Byte]]).list().asScala
+      result.map(blob =>
+        MAPPER.readValue[DataSegment](
+          StringUtils.fromUtf8(blob), new TypeReference[DataSegment] {}
+        )
       )
     })
   }
@@ -107,11 +109,9 @@ class DruidMetadataClient(
       val statement =
         s"""
            |SELECT DISTINCT dataSource FROM ${druidMetadataTableConfig.getSegmentsTable}
-           |WHERE used = 1
+           |WHERE used = true AND dataSource = :dataSource
          """.stripMargin
-      val query = handle.createQuery(statement)
-      val result = query.mapTo(classOf[String]).list().asScala
-      result.contains(dataSource)
+      !handle.createQuery(statement).bind("dataSource", dataSource).list().isEmpty
     })
   }
 
@@ -128,7 +128,7 @@ class DruidMetadataClient(
 
 object DruidMetadataClient {
   def apply(dataSourceOptions: DataSourceOptions): DruidMetadataClient = {
-    assert(dataSourceOptions.get(DruidDataSourceOptionKeys.metadataDbTypeKey).isPresent,
+    require(dataSourceOptions.get(DruidDataSourceOptionKeys.metadataDbTypeKey).isPresent,
       s"Must set ${DruidDataSourceOptionKeys.metadataDbTypeKey} or provide segments directly!")
     val dbcpProperties = new Properties()
     if (dataSourceOptions.get(DruidDataSourceOptionKeys.metadataDbcpPropertiesKey).isPresent) {

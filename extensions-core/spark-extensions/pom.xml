@@ -333,6 +333,7 @@
                     <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
                     <junitxml>.</junitxml>
                     <parallel>false</parallel>
+                    <argLine>-Dderby.stream.error.field=org.apache.commons.io.output.NullOutputStream.NULL_OUTPUT_STREAM</argLine>
                 </configuration>
                 <executions>
                     <execution>

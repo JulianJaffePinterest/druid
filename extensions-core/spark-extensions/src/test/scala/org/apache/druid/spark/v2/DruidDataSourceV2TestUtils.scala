@@ -19,11 +19,18 @@
 
 package org.apache.druid.spark.v2
 
-import java.io.File
+import com.google.common.base.{Supplier, Suppliers}
+import org.apache.commons.dbcp2.BasicDataSource
+
+import java.io.{File, OutputStream}
 import java.util
 
 import org.apache.druid.java.util.common.{Intervals, StringUtils}
+import org.apache.druid.metadata.{MetadataStorageConnectorConfig, MetadataStorageTablesConfig,
+  SQLMetadataConnector}
 import org.apache.druid.spark.MAPPER
+import org.apache.druid.spark.registries.SQLConnectorRegistry
+import org.apache.druid.spark.utils.DruidDataSourceOptionKeys
 import org.apache.druid.timeline.DataSegment
 import org.apache.druid.timeline.partition.NumberedShardSpec
 import org.apache.spark.sql.catalyst.InternalRow
@@ -31,7 +38,10 @@ import org.apache.spark.sql.sources.v2.reader.InputPartitionReader
 import org.apache.spark.sql.types.{ArrayType, BinaryType, DoubleType, FloatType, LongType,
   StringType, StructField, StructType}
 import org.joda.time.Interval
+import org.skife.jdbi.v2.exceptions.UnableToObtainConnectionException
+import org.skife.jdbi.v2.{DBI, Handle}
 
+import java.util.Properties
 import scala.collection.JavaConverters.{mapAsJavaMapConverter, seqAsJavaListConverter}
 import scala.collection.mutable.ArrayBuffer
 
@@ -54,6 +64,15 @@ trait DruidDataSourceV2TestUtils {
   val dimensions: util.List[String] = List("dim1", "dim2", "id1", "id2").asJava
   val metrics: util.List[String] = List(
     "count", "sum_metric1","sum_metric2","sum_metric3","sum_metric4","uniq_id1").asJava
+  val metricsSpec: String =
+    """[
+      |  { "type": "count", "name": "count" },
+      |  { "type": "longSum", "name": "sum_metric1", "fieldName": "sum_metric1" },
+      |  { "type": "longSum", "name": "sum_metric2", "fieldName": "sum_metric2" },
+      |  { "type": "doubleSum", "name": "sum_metric3", "fieldName": "sum_metric3" },
+      |  { "type": "floatSum", "name": "sum_metric4", "fieldName": "sum_metric4" },
+      |  { "type": "thetaSketch", "name": "uniq_id1", "fieldName": "uniq_id1", "isInputThetaSketch": true }
+      |]""".stripMargin
   val binaryVersion: Integer = 9
   val firstSegment: DataSegment = new DataSegment(
     dataSource,
@@ -114,6 +133,70 @@ trait DruidDataSourceV2TestUtils {
   val columnTypes: Option[Set[String]] =
     Option(Set("LONG", "STRING", "FLOAT", "DOUBLE", "thetaSketch"))
 
+  val testDbUri = "jdbc:derby:memory:TestDatabase"
+
+  // Be very careful about changing this; DruidDataSourceV2Suite calls FileUtils.deleteDirectory on this path!
+  val storageDirectory = "src/test/resources/segments/out/"
+
+  val metadataMap: Map[String, String] = Map[String, String](
+    DruidDataSourceOptionKeys.metadataDbTypeKey -> "embedded_derby",
+    DruidDataSourceOptionKeys.metadataConnectUriKey -> testDbUri
+  )
+
+  def createTestDb(): Unit = new DBI(s"$testDbUri;create=true").open().close()
+  def openDbiToTestDb: Handle = new DBI(testDbUri).open()
+  def tearDownTestDb(): Unit = {
+    try {
+      new DBI(s"$testDbUri;shutdown=true").open().close()
+    } catch {
+      // Closing an in-memory Derby database throws an expected exception. It bubbles up as an
+      // UnableToObtainConnectionException from skiffie.
+      // TODO: Just open the connection directly and check the exception there
+      case _: UnableToObtainConnectionException =>
+    }}
+
+  def registerEmbeddedDerbySQLConnector(): Unit = {
+    SQLConnectorRegistry.register("embedded_derby",
+      (connectorConfigSupplier: Supplier[MetadataStorageConnectorConfig],
+       metadataTableConfigSupplier: Supplier[MetadataStorageTablesConfig]) => {
+        val connectorConfig = connectorConfigSupplier.get()
+        val amendedConnectorConfigSupplier =
+          new MetadataStorageConnectorConfig
+          {
+            override def isCreateTables: Boolean = true
+            override def getHost: String = connectorConfig.getHost
+            override def getPort: Int = connectorConfig.getPort
+            override def getConnectURI: String = connectorConfig.getConnectURI
+            override def getUser: String = connectorConfig.getUser
+            override def getPassword: String = connectorConfig.getPassword
+            override def getDbcpProperties: Properties = connectorConfig.getDbcpProperties
+          }
+
+        val res: SQLMetadataConnector =
+          new SQLMetadataConnector(Suppliers.ofInstance(amendedConnectorConfigSupplier), metadataTableConfigSupplier) {
+            val datasource: BasicDataSource = getDatasource
+            datasource.setDriverClassLoader(getClass.getClassLoader)
+            datasource.setDriverClassName("org.apache.derby.jdbc.EmbeddedDriver")
+            private val dbi = new DBI(connectorConfigSupplier.get().getConnectURI)
+            private val SERIAL_TYPE = "BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1, INCREMENT BY 1)"
+
+            override def getSerialType: String = SERIAL_TYPE
+
+            override def getStreamingFetchSize: Int = 1
+
+            override def getQuoteString: String = "\\\""
+
+            override def tableExists(handle: Handle, tableName: String): Boolean =
+              !handle.createQuery("select * from SYS.SYSTABLES where tablename = :tableName")
+                .bind("tableName", StringUtils.toUpperCase(tableName)).list.isEmpty;
+
+            override def getDBI: DBI = dbi
+          }
+        res.createSegmentTable()
+        res
+      })
+  }
+
   def partitionReaderToSeq(reader: InputPartitionReader[InternalRow]): Seq[InternalRow] = {
     val res = new ArrayBuffer[InternalRow]()
     // TODO: Wrap this in a custom iterator and call .toSeq to avoid mutable collections
@@ -126,5 +209,9 @@ trait DruidDataSourceV2TestUtils {
 
   def compareInternalRows(left: InternalRow, right: InternalRow, schema: StructType): Boolean = {
     left.numFields == right.numFields && !left.toSeq(schema).forall(right.toSeq(schema).contains(_))
+  }
+
+  val DEV_NULL: OutputStream = new OutputStream() {
+    override def write(b: Int): Unit = {}
   }
 }

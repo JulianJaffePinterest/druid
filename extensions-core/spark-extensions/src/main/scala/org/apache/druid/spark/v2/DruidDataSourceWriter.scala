@@ -51,7 +51,7 @@ class DruidDataSourceWriter(
                            ) extends DataSourceWriter with Logging {
 
   override def createWriterFactory(): DataWriterFactory[InternalRow] = {
-    new DruidDataWriterFactory(schema, dataSourceOptions)
+    new DruidDataWriterFactory(schema, dataSourceOptions.asMap())
   }
 
   /**
@@ -98,6 +98,7 @@ object DruidDataSourceWriter {
              saveMode: SaveMode,
              dataSourceOptions: DataSourceOptions
            ): Optional[DataSourceWriter] = {
+    validateDataSourceOption(dataSourceOptions, schema)
     val dataSource = dataSourceOptions.tableName().get()
     val metadataClient = DruidMetadataClient(dataSourceOptions)
     val dataSourceExists = metadataClient.checkIfDataSourceExists(dataSource)
@@ -138,12 +139,17 @@ object DruidDataSourceWriter {
     )
   }
 
-  private[v2] def validateDataSourceOption(dataSourceOptions: DataSourceOptions): Unit = {
-    assert(dataSourceOptions.tableName().isPresent,
+  private[v2] def validateDataSourceOption(dataSourceOptions: DataSourceOptions, schema: StructType): Unit = {
+    require(dataSourceOptions.tableName().isPresent,
       s"Must set ${DataSourceOptions.TABLE_KEY}!")
     // TODO: default to derby?
-    assert(dataSourceOptions.get(DruidDataSourceOptionKeys.metadataDbTypeKey).isPresent,
+    require(dataSourceOptions.get(DruidDataSourceOptionKeys.metadataDbTypeKey).isPresent,
       s"Must set ${DruidDataSourceOptionKeys.metadataDbTypeKey}!"
+    )
+    // TODO: Create mapping between keys and defaults instead of constantly .orElse(<string literal>)ing everywhere
+    require(
+      schema.fieldNames.contains(dataSourceOptions.get(DruidDataSourceOptionKeys.timestampColumnKey).orElse("ts")),
+      s"${DruidDataSourceOptionKeys.timestampColumnKey} must be a field in the dataframe to write!"
     )
   }
 }

@@ -19,7 +19,7 @@
 
 package org.apache.druid.spark.v2
 
-import java.util.Optional
+import java.util.{Map => JMap, Optional}
 
 import com.fasterxml.jackson.core.`type`.TypeReference
 import org.apache.druid.data.input.impl.DimensionSchema.MultiValueHandling
@@ -45,12 +45,13 @@ import scala.collection.JavaConverters.{mapAsScalaMapConverter, seqAsJavaListCon
   * DATASOURCEOPTIONS. Runs on the driver, whereas the created DruidDataWriter runs on an executor.
   *
   * @param schema The schema of the dataframe being written to Druid.
-  * @param dataSourceOptions Options to use to configure created DruidDataWriters.
+  * @param dataSourceOptionsMap Options to use to configure created DruidDataWriters.
   */
 class DruidDataWriterFactory(
                               schema: StructType,
-                              dataSourceOptions: DataSourceOptions
+                              dataSourceOptionsMap: JMap[String, String]
                             ) extends DataWriterFactory[InternalRow] {
+  private lazy val dataSourceOptions = new DataSourceOptions(dataSourceOptionsMap)
   override def createDataWriter(partitionId: Int, taskId: Long, epochId: Long):
   DataWriter[InternalRow] = {
     val version = dataSourceOptions

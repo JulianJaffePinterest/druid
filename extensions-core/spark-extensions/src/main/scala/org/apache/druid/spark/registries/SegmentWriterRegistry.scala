@@ -22,10 +22,10 @@ package org.apache.druid.spark.registries
 import java.io.File
 
 import com.fasterxml.jackson.core.`type`.TypeReference
-import org.apache.druid.java.util.common.IAE
+import org.apache.druid.java.util.common.{IAE, StringUtils}
 import org.apache.druid.segment.loading.{DataSegmentKiller, DataSegmentPusher,
   LocalDataSegmentKiller, LocalDataSegmentPusher, LocalDataSegmentPusherConfig}
-import org.apache.druid.spark.utils.Logging
+import org.apache.druid.spark.utils.{DruidDataSourceOptionKeys, Logging}
 import org.apache.druid.spark.MAPPER
 import org.apache.druid.storage.azure.{AzureAccountConfig, AzureCloudBlobIterableFactory,
   AzureDataSegmentConfig, AzureDataSegmentKiller, AzureDataSegmentPusher, AzureInputDataConfig,
@@ -92,19 +92,20 @@ object SegmentWriterRegistry extends Logging {
 
   private val knownTypes: Map[String, () => Unit] =
     Map[String, () => Unit](
-      "local" -> (
+      DruidDataSourceOptionKeys.localDeepStorageTypeKey -> (
         () =>
           register(
-            "local",
+            DruidDataSourceOptionKeys.localDeepStorageTypeKey,
             (properties: Map[String, String]) =>
               new LocalDataSegmentPusher(new LocalDataSegmentPusherConfig() {
+                // DataSourceOptions are case-insensitive, so when we use the map form we need to lowercase keys
                 override def getStorageDirectory: File =
-                  new File(properties.get("storageDirectory").toString)
+                  new File(properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.localStorageDirectoryKey)))
               }),
             (dataSourceOptions: DataSourceOptions) =>
               new LocalDataSegmentKiller(new LocalDataSegmentPusherConfig() {
                 override def getStorageDirectory: File =
-                  new File(dataSourceOptions.get("storageDirectory").get)
+                  new File(dataSourceOptions.get(DruidDataSourceOptionKeys.localStorageDirectoryKey).get)
               })
           )
         ),
@@ -112,131 +113,131 @@ object SegmentWriterRegistry extends Logging {
       //  serializable, and we shouldn't force users to construct them. Instead, we should allow
       //  users to pass the arguments they care about (e.g. paths, buckets, keys, etc.) and
       //  construct the internal Druid confs ourselves.
-      "hdfs" -> (
+      DruidDataSourceOptionKeys.hdfsDeepStorageTypeKey -> (
         () =>
           register(
-            "hdfs",
+            DruidDataSourceOptionKeys.hdfsDeepStorageTypeKey,
             (properties: Map[String, String]) =>
               new HdfsDataSegmentPusher(
                 MAPPER.readValue[HdfsDataSegmentPusherConfig](
-                  properties.get("hdfsPusherConfig").toString,
+                  properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.hdfsPusherConfigKey)),
                   new TypeReference[HdfsDataSegmentPusherConfig] {}
                 ),
                 MAPPER.readValue[Configuration](
-                  properties.get("hadoopConf").toString,
+                  properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.hdfsHadoopConfKey)),
                   new TypeReference[Configuration] {}
                 ),
                 MAPPER),
             (dataSourceOptions: DataSourceOptions) => new HdfsDataSegmentKiller(
               MAPPER.readValue[Configuration](
-                dataSourceOptions.get("hadoopConf").get,
+                dataSourceOptions.get(DruidDataSourceOptionKeys.hdfsHadoopConfKey).get,
                 new TypeReference[Configuration] {}
               ),
               MAPPER.readValue[HdfsDataSegmentPusherConfig](
-                dataSourceOptions.get("hdfsPusherConfig").get,
+                dataSourceOptions.get(DruidDataSourceOptionKeys.hdfsPusherConfigKey).get,
                 new TypeReference[HdfsDataSegmentPusherConfig] {}
               )
             ))
       ),
-      "s3" -> (
+      DruidDataSourceOptionKeys.s3DeepStorageTypeKey -> (
         () => register(
-          "s3",
+          DruidDataSourceOptionKeys.s3DeepStorageTypeKey,
           (properties: Map[String, String]) =>
             new S3DataSegmentPusher(
               MAPPER.readValue[ServerSideEncryptingAmazonS3](
-                properties.get("s3ServerSideEncryptionConfig").toString,
+                properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3ServerSideEncryptionConfigKey)),
                 new TypeReference[ServerSideEncryptingAmazonS3] {}
               ),
               MAPPER.readValue[S3DataSegmentPusherConfig](
-                properties.get("s3DataSegmentPusherConfig").toString,
+                properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3DataSegmentPusherConfigKey)),
                 new TypeReference[S3DataSegmentPusherConfig] {}
               )),
           (dataSourceOptions: DataSourceOptions) =>
             new S3DataSegmentKiller(
               MAPPER.readValue[ServerSideEncryptingAmazonS3](
-                dataSourceOptions.get("s3ServerSideEncryptionConfig").get,
+                dataSourceOptions.get(DruidDataSourceOptionKeys.s3ServerSideEncryptionConfigKey).get,
                 new TypeReference[ServerSideEncryptingAmazonS3] {}
               ),
               MAPPER.readValue[S3DataSegmentPusherConfig](
-                dataSourceOptions.get("s3DataSegmentPusherConfig").get,
+                dataSourceOptions.get(DruidDataSourceOptionKeys.s3DataSegmentPusherConfigKey).get,
                 new TypeReference[S3DataSegmentPusherConfig] {}
               ),
               MAPPER.readValue[S3InputDataConfig](
-                dataSourceOptions.get("s3InputDataConfig").get,
+                dataSourceOptions.get(DruidDataSourceOptionKeys.s3InputDataConfigKey).get,
                 new TypeReference[S3InputDataConfig] {}
               )
             )
         )
       ),
-      "google" -> (
+      DruidDataSourceOptionKeys.googleDeepStorageTypeKey -> (
         () => register(
-          "google",
+          DruidDataSourceOptionKeys.googleDeepStorageTypeKey,
           (properties: Map[String, String]) =>
           new GoogleDataSegmentPusher(
             MAPPER.readValue[GoogleStorage](
-              properties.get("googleStorageConfig").toString,
+              properties.get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.googleStorageConfigKey)).toString,
               new TypeReference[GoogleStorage] {}
             ),
             MAPPER.readValue[GoogleAccountConfig](
-              properties.get("googleAccountConfig").toString,
+              properties.get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.googleAccountConfigKey)).toString,
               new TypeReference[GoogleAccountConfig] {}
             )
           ),
           (dataSourceOptions: DataSourceOptions) =>
             new GoogleDataSegmentKiller(
               MAPPER.readValue[GoogleStorage](
-                dataSourceOptions.get("googleStorageConfig").get,
+                dataSourceOptions.get(DruidDataSourceOptionKeys.googleStorageConfigKey).get,
                 new TypeReference[GoogleStorage] {}
               ),
               MAPPER.readValue[GoogleAccountConfig](
-                dataSourceOptions.get("googleAccountConfig").get,
+                dataSourceOptions.get(DruidDataSourceOptionKeys.googleAccountConfigKey).get,
                 new TypeReference[GoogleAccountConfig] {}
               ),
               MAPPER.readValue[GoogleInputDataConfig](
-                dataSourceOptions.get("googleInputDataConfig").get,
+                dataSourceOptions.get(DruidDataSourceOptionKeys.googleInputDataConfigKey).get,
                 new TypeReference[GoogleInputDataConfig] {}
               )
             )
         )
       ),
-      "azure" -> (
+      DruidDataSourceOptionKeys.azureDeepStorageKey -> (
         () => register(
-          "azure",
+          DruidDataSourceOptionKeys.azureDeepStorageKey,
           (properties: Map[String, String]) =>
             new AzureDataSegmentPusher(
               MAPPER.readValue[AzureStorage](
-                properties.get("azureStorageConfig").toString,
+                properties.get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.azureStorageConfigKey)).toString,
                 new TypeReference[AzureStorage] {}
               ),
               MAPPER.readValue[AzureAccountConfig](
-                properties.get("azureAccountConfig").toString,
+                properties.get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.azureAccountConfigKey)).toString,
                 new TypeReference[AzureAccountConfig] {}
               ),
               MAPPER.readValue[AzureDataSegmentConfig](
-                properties.get("azureDataSegmentConfig").toString,
+                properties.get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.azureDataSegmentConfigKey)).toString,
                 new TypeReference[AzureDataSegmentConfig] {}
               )
             ),
           (dataSourceOptions: DataSourceOptions) =>
             new AzureDataSegmentKiller(
               MAPPER.readValue[AzureDataSegmentConfig](
-                dataSourceOptions.get("azureDataSegmentConfig").get,
+                dataSourceOptions.get(DruidDataSourceOptionKeys.azureDataSegmentConfigKey).get,
                 new TypeReference[AzureDataSegmentConfig] {}
               ),
               MAPPER.readValue[AzureInputDataConfig](
-                dataSourceOptions.get("azureInputDataConfig").get,
+                dataSourceOptions.get(DruidDataSourceOptionKeys.azureInputDataConfigKey).get,
                 new TypeReference[AzureInputDataConfig] {}
               ),
               MAPPER.readValue[AzureAccountConfig](
-                dataSourceOptions.get("azureAccountConfig").get,
+                dataSourceOptions.get(DruidDataSourceOptionKeys.azureAccountConfigKey).get,
                 new TypeReference[AzureAccountConfig] {}
               ),
               MAPPER.readValue[AzureStorage](
-                dataSourceOptions.get("azureStorageConfig").get,
+                dataSourceOptions.get(DruidDataSourceOptionKeys.azureStorageConfigKey).get,
                 new TypeReference[AzureStorage] {}
               ),
               MAPPER.readValue[AzureCloudBlobIterableFactory](
-                dataSourceOptions.get("azureCloudBlobIterableFactoryConfig").get,
+                dataSourceOptions.get(DruidDataSourceOptionKeys.azureCloudBlobIterableFactoryConfigKey).get,
                 new TypeReference[AzureCloudBlobIterableFactory] {}
               )
             )

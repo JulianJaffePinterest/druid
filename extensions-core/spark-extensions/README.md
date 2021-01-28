@@ -68,7 +68,7 @@ val writerConfigs = Map[String, String] (
 df
   .write
   .format("druid")
-  .mode(SaveMode.OVERWRITE)
+  .mode(SaveMode.Overwrite)
   .options(Map[String, String](writerConfigs ++ metadataProperties))
   .save()
 ```

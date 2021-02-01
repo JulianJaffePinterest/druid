@@ -72,6 +72,7 @@ class SparkFunSuite extends AnyFunSuite with BeforeAndAfterEach {
     super.afterEach()
 
     sparkContext.stop()
+    // TODO whenever: This still leaks one tempdir per mvn test run.
     Directory(sparkContext.getConf.get("spark.local.dir")).deleteRecursively()
   }
 }

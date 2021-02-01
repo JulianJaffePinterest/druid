@@ -86,11 +86,8 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
   private val timestampParser = TimestampParser
     .createObjectTimestampParser(dataSchema.getTimestampSpec.getTimestampFormat)
 
-  private val partitionNumMap = (bucket: Long) => if (config.partitionMap.isDefined) {
-    config.partitionMap.get(config.partitionId)(bucket)
-  } else {
-    (config.partitionId, 1)
-  }
+  private val partitionMap = config.partitionMap.map(_(config.partitionId))
+    .getOrElse(Map[String, String]("partitionId" -> config.partitionId.toString))
 
   private val indexSpec: IndexSpec = new IndexSpec(
     DruidDataWriter.getBitmapSerde(
@@ -133,7 +130,6 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
     }
   }
   ComplexMetricRegistry.registerSerdes()
-  SegmentWriterRegistry.registerByType(config.deepStorageType)
 
   private val pusher: DataSegmentPusher = SegmentWriterRegistry.getSegmentPusher(
     config.deepStorageType, config.properties
@@ -254,9 +250,7 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
           ))
         val shardSpec = ShardSpecRegistry.createShardSpec(
           config.shardSpec,
-          partitionNumMap(interval.getStartMillis)._1,
-          partitionNumMap(interval.getStartMillis)._2,
-          partitionDimensions)
+          partitionMap)
         val dataSegmentTemplate = new DataSegment(
           config.dataSource,
           dataSchema.getGranularitySpec.getSegmentGranularity.bucket(DateTimes.utc(interval.getStartMillis)),
@@ -274,6 +268,7 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
         Seq.empty
       }
     }.toSeq.flatten
+    closer.close()
     DruidWriterCommitMessage(specs)
   }
 

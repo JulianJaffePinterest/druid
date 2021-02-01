@@ -92,7 +92,7 @@ class DruidDataSourceWriter(
   }
 }
 
-object DruidDataSourceWriter {
+object DruidDataSourceWriter extends Logging {
   def apply(
              schema: StructType,
              saveMode: SaveMode,
@@ -120,6 +120,7 @@ object DruidDataSourceWriter {
         createDataSourceWriterOptional(schema, dataSourceOptions, metadataClient)
       }
       case SaveMode.Ignore => if (dataSourceExists) {
+        logInfo(s"$dataSource already exists and Save Mode is Ignore; not writing!")
         Optional.empty[DataSourceWriter]
       } else {
         createDataSourceWriterOptional(schema, dataSourceOptions, metadataClient)

@@ -61,8 +61,8 @@ class DruidDataWriterFactory(
     val partitionIdToDruidPartitionsMap = DruidDataWriterFactory.scalifyOptional(
       dataSourceOptions
         .get(DruidDataSourceOptionKeys.partitionsMapKey)
-    ).map(serializedMap => MAPPER.readValue[Map[Int, Map[Long, (Int, Int)]]](
-      serializedMap, new TypeReference[Map[Int, Map[Long, (Int, Int)]]] {}
+    ).map(serializedMap => MAPPER.readValue[Map[Int, Map[String, String]]](
+      serializedMap, new TypeReference[Map[Int, Map[String, String]]] {}
     ))
 
     val dataSchema = DruidDataWriterFactory.createDataSchemaFromOptions(dataSourceOptions, schema)

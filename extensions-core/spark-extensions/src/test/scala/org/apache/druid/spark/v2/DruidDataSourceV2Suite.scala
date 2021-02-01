@@ -19,16 +19,13 @@
 
 package org.apache.druid.spark.v2
 
-import org.apache.druid.java.util.common.{FileUtils, StringUtils}
-import org.apache.druid.java.util.common.granularity.GranularityType
-import org.apache.druid.spark.utils.DruidDataSourceOptionKeys
+import org.apache.druid.java.util.common.StringUtils
 import org.apache.druid.spark.{MAPPER, SparkFunSuite, TryWithResources}
 import org.apache.druid.timeline.DataSegment
 import org.apache.spark.sql.{DataFrame, Row, SaveMode}
 import org.apache.spark.sql.sources.v2.DataSourceOptions
 import org.scalatest.matchers.should.Matchers
 
-import java.io.File
 import scala.collection.JavaConverters.{collectionAsScalaIterableConverter, mapAsJavaMapConverter,
   seqAsJavaListConverter}
 
@@ -69,26 +66,17 @@ class DruidDataSourceV2Suite extends SparkFunSuite with Matchers
       Row.fromSeq(Seq(1577988000000L, List("dim2"), "3", "2", "1", 1L, 1L, 7L, 0.0, 19.0F, idTwoSketch))
     ).asJava, schema)
 
-    createTestDb()
+    val uri = generateUniqueTestUri()
+    createTestDb(uri)
     registerEmbeddedDerbySQLConnector()
-
-    val writerProps = Map[String, String](
-      DataSourceOptions.TABLE_KEY -> dataSource,
-      DruidDataSourceOptionKeys.versionKey -> version,
-      DruidDataSourceOptionKeys.localStorageDirectoryKey -> storageDirectory,
-      DruidDataSourceOptionKeys.dimensionsKey -> dimensions.asScala.mkString(","),
-      DruidDataSourceOptionKeys.metricsKey -> metricsSpec,
-      DruidDataSourceOptionKeys.timestampColumnKey -> "__time",
-      DruidDataSourceOptionKeys.segmentGranularity -> GranularityType.DAY.name
-    )
 
     sourceDf.write
       .format(DruidDataSourceV2ShortName)
       .mode(SaveMode.Overwrite)
-      .options((writerProps ++ metadataMap).asJava)
+      .options((writerProps ++ metadataClientProps(uri)).asJava)
       .save()
 
-    tryWithResources(openDbiToTestDb) {
+    tryWithResources(openDbiToTestDb(uri)) {
       handle =>
         val res =
           handle.createQuery("SELECT DATASOURCE, START, \"end\", PARTITIONED, VERSION, USED FROM druid_segments")
@@ -124,13 +112,13 @@ class DruidDataSourceV2Suite extends SparkFunSuite with Matchers
       .read
       .format(DruidDataSourceV2ShortName)
       .schema(schema)
-      .options((readerProps ++ metadataMap).asJava)
+      .options((readerProps ++ metadataClientProps(uri)).asJava)
       .load()
 
     matchDfs(readDf, sourceDf)
 
-    tearDownTestDb()
-    FileUtils.deleteDirectory(new File(storageDirectory).getAbsoluteFile)
+    tearDownTestDb(uri)
+    cleanUpWorkingDirectory()
   }
 
   /**

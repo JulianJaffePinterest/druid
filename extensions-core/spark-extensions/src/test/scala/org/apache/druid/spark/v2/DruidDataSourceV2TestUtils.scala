@@ -21,11 +21,11 @@ package org.apache.druid.spark.v2
 
 import com.google.common.base.{Supplier, Suppliers}
 import org.apache.commons.dbcp2.BasicDataSource
+import org.apache.druid.java.util.common.granularity.GranularityType
 
-import java.io.{File, OutputStream}
+import java.io.File
 import java.util
-
-import org.apache.druid.java.util.common.{Intervals, StringUtils}
+import org.apache.druid.java.util.common.{FileUtils, Intervals, StringUtils}
 import org.apache.druid.metadata.{MetadataStorageConnectorConfig, MetadataStorageTablesConfig,
   SQLMetadataConnector}
 import org.apache.druid.spark.MAPPER
@@ -34,6 +34,7 @@ import org.apache.druid.spark.utils.DruidDataSourceOptionKeys
 import org.apache.druid.timeline.DataSegment
 import org.apache.druid.timeline.partition.NumberedShardSpec
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.sources.v2.DataSourceOptions
 import org.apache.spark.sql.sources.v2.reader.InputPartitionReader
 import org.apache.spark.sql.types.{ArrayType, BinaryType, DoubleType, FloatType, LongType,
   StringType, StructField, StructType}
@@ -41,8 +42,9 @@ import org.joda.time.Interval
 import org.skife.jdbi.v2.exceptions.UnableToObtainConnectionException
 import org.skife.jdbi.v2.{DBI, Handle}
 
-import java.util.Properties
-import scala.collection.JavaConverters.{mapAsJavaMapConverter, seqAsJavaListConverter}
+import java.util.{Properties, UUID}
+import scala.collection.JavaConverters.{collectionAsScalaIterableConverter, mapAsJavaMapConverter,
+  seqAsJavaListConverter}
 import scala.collection.mutable.ArrayBuffer
 
 trait DruidDataSourceV2TestUtils {
@@ -50,15 +52,14 @@ trait DruidDataSourceV2TestUtils {
   val interval: Interval = Intervals.of("2020-01-01T00:00:00.000Z/2020-01-02T00:00:00.000Z")
   val secondInterval: Interval = Intervals.of("2020-01-02T00:00:00.000Z/2020-01-03T00:00:00.000Z")
   val version: String = "0"
-  val firstSegmentPath: String = new File(
-    "src/test/resources/segments/spark_druid_test/2020-01-01T00:00:00.000Z_2020-01-02T00:00:00.000Z/0/0/index.zip")
-    .getAbsolutePath
-  val secondSegmentPath: String = new File(
-    "src/test/resources/segments/spark_druid_test/2020-01-01T00:00:00.000Z_2020-01-02T00:00:00.000Z/0/1/index.zip")
-    .getAbsolutePath
-  val thirdSegmentPath: String = new File(
-    "src/test/resources/segments/spark_druid_test/2020-01-02T00:00:00.000Z_2020-01-03T00:00:00.000Z/0/0/index.zip")
-    .getAbsolutePath
+  val segmentsDir: File =
+    new File(makePath("src", "test", "resources", "segments")).getCanonicalFile
+  val firstSegmentPath: String =
+    makePath("spark_druid_test", "2020-01-01T00:00:00.000Z_2020-01-02T00:00:00.000Z", "0", "0", "index.zip")
+  val secondSegmentPath: String =
+    makePath("spark_druid_test", "2020-01-01T00:00:00.000Z_2020-01-02T00:00:00.000Z", "0", "1", "index.zip")
+  val thirdSegmentPath: String =
+    makePath("spark_druid_test", "2020-01-02T00:00:00.000Z_2020-01-03T00:00:00.000Z", "0", "0", "index.zip")
   val loadSpec: String => util.Map[String, AnyRef] = (path: String) =>
     Map[String, AnyRef]("type" -> "local", "path" -> path).asJava
   val dimensions: util.List[String] = List("dim1", "dim2", "id1", "id2").asJava
@@ -74,11 +75,12 @@ trait DruidDataSourceV2TestUtils {
       |  { "type": "thetaSketch", "name": "uniq_id1", "fieldName": "uniq_id1", "isInputThetaSketch": true }
       |]""".stripMargin
   val binaryVersion: Integer = 9
+
   val firstSegment: DataSegment = new DataSegment(
     dataSource,
     interval,
     version,
-    loadSpec(firstSegmentPath),
+    loadSpec(makePath(segmentsDir.getCanonicalPath, firstSegmentPath)),
     dimensions,
     metrics,
     new NumberedShardSpec(0, 0),
@@ -89,7 +91,7 @@ trait DruidDataSourceV2TestUtils {
     dataSource,
     interval,
     version,
-    loadSpec(secondSegmentPath),
+    loadSpec(makePath(segmentsDir.getCanonicalPath, secondSegmentPath)),
     dimensions,
     metrics,
     new NumberedShardSpec(1, 0),
@@ -100,7 +102,7 @@ trait DruidDataSourceV2TestUtils {
     dataSource,
     secondInterval,
     version,
-    loadSpec(thirdSegmentPath),
+    loadSpec(makePath(segmentsDir.getCanonicalPath, thirdSegmentPath)),
     dimensions,
     metrics,
     new NumberedShardSpec(0, 0),
@@ -133,21 +135,36 @@ trait DruidDataSourceV2TestUtils {
   val columnTypes: Option[Set[String]] =
     Option(Set("LONG", "STRING", "FLOAT", "DOUBLE", "thetaSketch"))
 
-  val testDbUri = "jdbc:derby:memory:TestDatabase"
+  private val tempDirs: ArrayBuffer[String] = new ArrayBuffer[String]()
+  def testWorkingStorageDirectory: String = {
+    val tempDir = FileUtils.createTempDir("druid-spark-tests").getCanonicalPath
+    tempDirs += tempDir
+    tempDir
+  }
 
-  // Be very careful about changing this; DruidDataSourceV2Suite calls FileUtils.deleteDirectory on this path!
-  val storageDirectory = "src/test/resources/segments/out/"
+  private val testDbUri = "jdbc:derby:memory:TestDatabase"
+  def generateUniqueTestUri(): String = testDbUri + dbSafeUUID
 
-  val metadataMap: Map[String, String] = Map[String, String](
+  val metadataClientProps: String => Map[String, String] = (uri: String) => Map[String, String](
     DruidDataSourceOptionKeys.metadataDbTypeKey -> "embedded_derby",
-    DruidDataSourceOptionKeys.metadataConnectUriKey -> testDbUri
+    DruidDataSourceOptionKeys.metadataConnectUriKey -> uri
   )
 
-  def createTestDb(): Unit = new DBI(s"$testDbUri;create=true").open().close()
-  def openDbiToTestDb: Handle = new DBI(testDbUri).open()
-  def tearDownTestDb(): Unit = {
+  lazy val writerProps: Map[String, String] = Map[String, String](
+    DataSourceOptions.TABLE_KEY -> dataSource,
+    DruidDataSourceOptionKeys.versionKey -> version,
+    DruidDataSourceOptionKeys.localStorageDirectoryKey -> testWorkingStorageDirectory,
+    DruidDataSourceOptionKeys.dimensionsKey -> dimensions.asScala.mkString(","),
+    DruidDataSourceOptionKeys.metricsKey -> metricsSpec,
+    DruidDataSourceOptionKeys.timestampColumnKey -> "__time",
+    DruidDataSourceOptionKeys.segmentGranularity -> GranularityType.DAY.name
+  )
+
+  def createTestDb(uri: String): Unit = new DBI(s"$uri;create=true").open().close()
+  def openDbiToTestDb(uri: String): Handle = new DBI(uri).open()
+  def tearDownTestDb(uri: String): Unit = {
     try {
-      new DBI(s"$testDbUri;shutdown=true").open().close()
+      new DBI(s"$uri;shutdown=true").open().close()
     } catch {
       // Closing an in-memory Derby database throws an expected exception. It bubbles up as an
       // UnableToObtainConnectionException from skiffie.
@@ -197,9 +214,12 @@ trait DruidDataSourceV2TestUtils {
       })
   }
 
+  def cleanUpWorkingDirectory(): Unit = {
+    tempDirs.foreach(dir => FileUtils.deleteDirectory(new File(dir).getCanonicalFile))
+  }
+
   def partitionReaderToSeq(reader: InputPartitionReader[InternalRow]): Seq[InternalRow] = {
     val res = new ArrayBuffer[InternalRow]()
-    // TODO: Wrap this in a custom iterator and call .toSeq to avoid mutable collections
     while (reader.next()) {
       res += reader.get()
     }
@@ -211,7 +231,9 @@ trait DruidDataSourceV2TestUtils {
     left.numFields == right.numFields && !left.toSeq(schema).forall(right.toSeq(schema).contains(_))
   }
 
-  val DEV_NULL: OutputStream = new OutputStream() {
-    override def write(b: Int): Unit = {}
+  def makePath(components: String*): String = {
+    components.mkString(File.separator)
   }
+
+  def dbSafeUUID: String = StringUtils.removeChar(UUID.randomUUID.toString, '-')
 }

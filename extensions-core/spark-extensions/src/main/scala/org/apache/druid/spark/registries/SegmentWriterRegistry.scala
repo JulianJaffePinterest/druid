@@ -70,24 +70,30 @@ object SegmentWriterRegistry extends Logging {
                         deepStorageType: String,
                         properties: Map[String, String]
                       ): DataSegmentPusher = {
-    if (registeredSegmentPusherCreatorFunctions.contains(deepStorageType)) {
-      registeredSegmentPusherCreatorFunctions(deepStorageType)(properties)
-    } else {
-      throw new IAE("No registered segment pusher creation function for deep storage " +
-        "type %s", deepStorageType)
+    if (!registeredSegmentPusherCreatorFunctions.keySet.contains(deepStorageType)) {
+      if (knownTypes.keySet.contains(deepStorageType)) {
+        registerByType(deepStorageType)
+      } else {
+        throw new IAE("No registered segment pusher creation function for deep storage " +
+          "type %s", deepStorageType)
+      }
     }
+    registeredSegmentPusherCreatorFunctions(deepStorageType)(properties)
   }
 
   def getSegmentKiller(
                         deepStorageType: String,
                         properties: DataSourceOptions
                       ): DataSegmentKiller = {
-    if (registeredSegmentKillerCreatorFunctions.contains(deepStorageType)) {
-      registeredSegmentKillerCreatorFunctions(deepStorageType)(properties)
-    } else {
-      throw new IAE("No registered segment killer creation function for deep storage " +
-        "type %s", deepStorageType)
+    if (!registeredSegmentKillerCreatorFunctions.keySet.contains(deepStorageType)) {
+      if (knownTypes.keySet.contains(deepStorageType)) {
+        registerByType(deepStorageType)
+      } else {
+        throw new IAE("No registered segment killer creation function for deep storage " +
+          "type %s", deepStorageType)
+      }
     }
+    registeredSegmentKillerCreatorFunctions(deepStorageType)(properties)
   }
 
   private val knownTypes: Map[String, () => Unit] =

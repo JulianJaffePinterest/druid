@@ -34,6 +34,8 @@ class DruidDataSourceWriterSuite extends SparkFunSuite with Matchers with Before
   with DruidDataSourceV2TestUtils {
   var uri: String = _
 
+  // TODO: Test that segment rationalization is handled correctly (rationalization logic should be tested in
+  //  SegmentRationalizerSuite, but we still need to verify that commit still works as expected)
   test("commit should correctly record segment data in the metadata database") {
     val druidDataSourceWriter = DruidDataSourceWriter(
       schema,

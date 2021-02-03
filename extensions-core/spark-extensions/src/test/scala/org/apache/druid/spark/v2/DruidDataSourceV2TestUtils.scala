@@ -153,7 +153,7 @@ trait DruidDataSourceV2TestUtils {
   lazy val writerProps: Map[String, String] = Map[String, String](
     DataSourceOptions.TABLE_KEY -> dataSource,
     DruidDataSourceOptionKeys.versionKey -> version,
-    DruidDataSourceOptionKeys.localStorageDirectoryKey -> testWorkingStorageDirectory,
+    DruidDataSourceOptionKeys.storageDirectoryKey -> testWorkingStorageDirectory,
     DruidDataSourceOptionKeys.dimensionsKey -> dimensions.asScala.mkString(","),
     DruidDataSourceOptionKeys.metricsKey -> metricsSpec,
     DruidDataSourceOptionKeys.timestampColumnKey -> "__time",

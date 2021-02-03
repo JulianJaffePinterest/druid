@@ -79,8 +79,6 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
       new TypeReference[DataSchema] {})
   private val dimensions: JList[String] =
     dataSchema.getDimensionsSpec.getDimensions.asScala.map(_.getName).asJava
-  private val partitionDimensions: Option[List[String]] = config
-    .properties.get(DruidDataWriterConfig.partitionDimensionsKey).map(_.split(',').toList)
   private val tsColumn: String = dataSchema.getTimestampSpec.getTimestampColumn
   private val tsColumnIndex = config.schema.fieldIndex(tsColumn)
   private val timestampParser = TimestampParser
@@ -229,7 +227,7 @@ class DruidDataWriter(config: DruidDataWriterConfig) extends DataWriter[Internal
       }
       if (adapters.nonEmpty) {
         // TODO: Merge adapters up to a total number of rows, and then split into new segments.
-        //  The tricky piece will be determining the partition number for multiple segments
+        //  The tricky piece will be determining the partition number for multiple segments (interpolate 0?)
         val finalStaticIndexer = INDEX_MERGER_V9
         val file = finalStaticIndexer.merge(
           adapters.asJava,

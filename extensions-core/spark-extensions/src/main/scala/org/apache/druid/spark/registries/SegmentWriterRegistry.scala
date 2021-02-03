@@ -20,12 +20,12 @@
 package org.apache.druid.spark.registries
 
 import java.io.File
-
 import com.fasterxml.jackson.core.`type`.TypeReference
+import org.apache.druid.guice.LocalDataStorageDruidModule
 import org.apache.druid.java.util.common.{IAE, StringUtils}
 import org.apache.druid.segment.loading.{DataSegmentKiller, DataSegmentPusher,
   LocalDataSegmentKiller, LocalDataSegmentPusher, LocalDataSegmentPusherConfig}
-import org.apache.druid.spark.utils.{DruidDataSourceOptionKeys, Logging}
+import org.apache.druid.spark.utils.{DeepStorageConstructorHelpers, DruidDataSourceOptionKeys, Logging}
 import org.apache.druid.spark.MAPPER
 import org.apache.druid.storage.azure.{AzureAccountConfig, AzureCloudBlobIterableFactory,
   AzureDataSegmentConfig, AzureDataSegmentKiller, AzureDataSegmentPusher, AzureInputDataConfig,
@@ -35,10 +35,11 @@ import org.apache.druid.storage.google.{GoogleAccountConfig, GoogleDataSegmentKi
 import org.apache.druid.storage.hdfs.{HdfsDataSegmentKiller, HdfsDataSegmentPusher,
   HdfsDataSegmentPusherConfig}
 import org.apache.druid.storage.s3.{S3DataSegmentKiller, S3DataSegmentPusher,
-  S3DataSegmentPusherConfig, S3InputDataConfig, ServerSideEncryptingAmazonS3}
+  S3StorageDruidModule, ServerSideEncryptingAmazonS3}
 import org.apache.hadoop.conf.Configuration
 import org.apache.spark.sql.sources.v2.DataSourceOptions
 
+import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable
 
 /**
@@ -98,20 +99,20 @@ object SegmentWriterRegistry extends Logging {
 
   private val knownTypes: Map[String, () => Unit] =
     Map[String, () => Unit](
-      DruidDataSourceOptionKeys.localDeepStorageTypeKey -> (
+      LocalDataStorageDruidModule.SCHEME -> (
         () =>
           register(
-            DruidDataSourceOptionKeys.localDeepStorageTypeKey,
+            LocalDataStorageDruidModule.SCHEME,
             (properties: Map[String, String]) =>
               new LocalDataSegmentPusher(new LocalDataSegmentPusherConfig() {
                 // DataSourceOptions are case-insensitive, so when we use the map form we need to lowercase keys
                 override def getStorageDirectory: File =
-                  new File(properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.localStorageDirectoryKey)))
+                  new File(properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.storageDirectoryKey)))
               }),
             (dataSourceOptions: DataSourceOptions) =>
               new LocalDataSegmentKiller(new LocalDataSegmentPusherConfig() {
                 override def getStorageDirectory: File =
-                  new File(dataSourceOptions.get(DruidDataSourceOptionKeys.localStorageDirectoryKey).get)
+                  new File(dataSourceOptions.get(DruidDataSourceOptionKeys.storageDirectoryKey).get)
               })
           )
         ),
@@ -119,62 +120,63 @@ object SegmentWriterRegistry extends Logging {
       //  serializable, and we shouldn't force users to construct them. Instead, we should allow
       //  users to pass the arguments they care about (e.g. paths, buckets, keys, etc.) and
       //  construct the internal Druid confs ourselves.
+      // HdfsStorageDruidModule.SCHEME is package-private, so we can't access it here
       DruidDataSourceOptionKeys.hdfsDeepStorageTypeKey -> (
         () =>
           register(
             DruidDataSourceOptionKeys.hdfsDeepStorageTypeKey,
-            (properties: Map[String, String]) =>
+            (properties: Map[String, String]) => {
+              val pusherConfig = new HdfsDataSegmentPusherConfig
+              pusherConfig.setStorageDirectory(
+                properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.storageDirectoryKey))
+              )
               new HdfsDataSegmentPusher(
-                MAPPER.readValue[HdfsDataSegmentPusherConfig](
-                  properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.hdfsPusherConfigKey)),
-                  new TypeReference[HdfsDataSegmentPusherConfig] {}
-                ),
+                pusherConfig,
                 MAPPER.readValue[Configuration](
                   properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.hdfsHadoopConfKey)),
                   new TypeReference[Configuration] {}
                 ),
-                MAPPER),
-            (dataSourceOptions: DataSourceOptions) => new HdfsDataSegmentKiller(
-              MAPPER.readValue[Configuration](
-                dataSourceOptions.get(DruidDataSourceOptionKeys.hdfsHadoopConfKey).get,
-                new TypeReference[Configuration] {}
-              ),
-              MAPPER.readValue[HdfsDataSegmentPusherConfig](
-                dataSourceOptions.get(DruidDataSourceOptionKeys.hdfsPusherConfigKey).get,
-                new TypeReference[HdfsDataSegmentPusherConfig] {}
+                MAPPER
+            )
+            },
+            (dataSourceOptions: DataSourceOptions) => {
+              val pusherConfig = new HdfsDataSegmentPusherConfig
+              pusherConfig.setStorageDirectory(dataSourceOptions.get(DruidDataSourceOptionKeys.hdfsHadoopConfKey).get)
+              new HdfsDataSegmentKiller(
+                MAPPER.readValue[Configuration](
+                  dataSourceOptions.get(DruidDataSourceOptionKeys.hdfsHadoopConfKey).get,
+                  new TypeReference[Configuration] {}
+                ),
+                pusherConfig
               )
-            ))
+            }
+          )
       ),
-      DruidDataSourceOptionKeys.s3DeepStorageTypeKey -> (
+      S3StorageDruidModule.SCHEME -> (
         () => register(
-          DruidDataSourceOptionKeys.s3DeepStorageTypeKey,
-          (properties: Map[String, String]) =>
+          S3StorageDruidModule.SCHEME,
+          (properties: Map[String, String]) => {
             new S3DataSegmentPusher(
               MAPPER.readValue[ServerSideEncryptingAmazonS3](
                 properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3ServerSideEncryptionConfigKey)),
                 new TypeReference[ServerSideEncryptingAmazonS3] {}
               ),
-              MAPPER.readValue[S3DataSegmentPusherConfig](
-                properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3DataSegmentPusherConfigKey)),
-                new TypeReference[S3DataSegmentPusherConfig] {}
-              )),
-          (dataSourceOptions: DataSourceOptions) =>
+              DeepStorageConstructorHelpers.createS3DataSegmentPusherConfig(properties))
+          },
+          (dataSourceOptions: DataSourceOptions) => {
+            val properties = dataSourceOptions.asMap().asScala.toMap
             new S3DataSegmentKiller(
               MAPPER.readValue[ServerSideEncryptingAmazonS3](
                 dataSourceOptions.get(DruidDataSourceOptionKeys.s3ServerSideEncryptionConfigKey).get,
                 new TypeReference[ServerSideEncryptingAmazonS3] {}
               ),
-              MAPPER.readValue[S3DataSegmentPusherConfig](
-                dataSourceOptions.get(DruidDataSourceOptionKeys.s3DataSegmentPusherConfigKey).get,
-                new TypeReference[S3DataSegmentPusherConfig] {}
-              ),
-              MAPPER.readValue[S3InputDataConfig](
-                dataSourceOptions.get(DruidDataSourceOptionKeys.s3InputDataConfigKey).get,
-                new TypeReference[S3InputDataConfig] {}
-              )
+              DeepStorageConstructorHelpers.createS3DataSegmentPusherConfig(properties),
+              DeepStorageConstructorHelpers.createS3InputDataConfig(properties)
             )
+          }
         )
       ),
+      // GoogleStorageDruidModule.SCHEME is package-private as well
       DruidDataSourceOptionKeys.googleDeepStorageTypeKey -> (
         () => register(
           DruidDataSourceOptionKeys.googleDeepStorageTypeKey,
@@ -206,6 +208,7 @@ object SegmentWriterRegistry extends Logging {
             )
         )
       ),
+      // AzureStorageDruidModule is package-private
       DruidDataSourceOptionKeys.azureDeepStorageKey -> (
         () => register(
           DruidDataSourceOptionKeys.azureDeepStorageKey,

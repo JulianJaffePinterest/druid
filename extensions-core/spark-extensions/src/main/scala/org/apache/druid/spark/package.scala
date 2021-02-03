@@ -32,7 +32,7 @@ import scala.collection.JavaConverters.seqAsJavaListConverter
 
 package object spark {
 
-  val MAPPER: ObjectMapper = new DefaultObjectMapper()
+  private[spark] val MAPPER: ObjectMapper = new DefaultObjectMapper()
 
   private val injectableValues: InjectableValues =
     new InjectableValues.Std()
@@ -52,5 +52,9 @@ package object spark {
       .addValue(classOf[DataSegment.PruneSpecsHolder], PruneSpecsHolder.DEFAULT)
 
   MAPPER.setInjectableValues(injectableValues)
+
+  def serialize(obj: AnyRef): String = {
+    MAPPER.writeValueAsString(obj)
+  }
 }
 

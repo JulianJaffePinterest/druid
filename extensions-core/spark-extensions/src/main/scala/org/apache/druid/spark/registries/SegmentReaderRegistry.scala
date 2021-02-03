@@ -19,12 +19,14 @@
 
 package org.apache.druid.spark.registries
 
+import org.apache.druid.guice.LocalDataStorageDruidModule
+
 import java.net.{URI, URISyntaxException}
 import java.util.{Map => JMap}
-
 import org.apache.druid.java.util.common.{IAE, ISE, StringUtils}
 import org.apache.druid.spark.utils.Logging
 import org.apache.druid.spark.MAPPER
+import org.apache.druid.storage.s3.S3StorageDruidModule
 
 import scala.collection.mutable
 
@@ -64,7 +66,7 @@ object SegmentReaderRegistry extends Logging {
   // TODO: Add Azure
   private val knownTypes: Map[String, JMap[String, AnyRef] => URI] =
     Map[String, JMap[String, AnyRef] => URI](
-      "s3_zip" -> ((loadSpec: JMap[String, AnyRef])=>
+      S3StorageDruidModule.SCHEME_S3_ZIP -> ((loadSpec: JMap[String, AnyRef])=>
         if ("s3a" == loadSpec.get("S3Schema")) {
           URI.create(StringUtils.format("s3a://%s/%s", loadSpec.get("bucket"),
             loadSpec.get("key")))
@@ -83,7 +85,7 @@ object SegmentReaderRegistry extends Logging {
         // Because of this we just URL encode the : making everything work as it should.
         URI.create(StringUtils.format("gs://%s/%s", loadSpec.get("bucket"),
           StringUtils.replaceChar(loadSpec.get("path").toString, ':', "%3A")))),
-      "local" -> ((loadSpec: JMap[String, AnyRef]) =>
+      LocalDataStorageDruidModule.SCHEME -> ((loadSpec: JMap[String, AnyRef]) =>
         try {
           // scalastyle:off null
           new URI("file", null, loadSpec.get("path").toString, null, null)

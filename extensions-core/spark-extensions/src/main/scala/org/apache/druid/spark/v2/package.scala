@@ -25,12 +25,12 @@ import org.apache.druid.segment.writeout.OnHeapMemorySegmentWriteOutMediumFactor
 package object v2 { // scalastyle:ignore package.object.name
   val DruidDataSourceV2ShortName = "druid"
 
-  val INDEX_IO = new IndexIO(
+  private[v2] val INDEX_IO = new IndexIO(
     MAPPER,
     () => 1000000
   )
 
-  val INDEX_MERGER_V9 = new IndexMergerV9(
+  private[v2] val INDEX_MERGER_V9 = new IndexMergerV9(
     MAPPER,
     INDEX_IO,
     OnHeapMemorySegmentWriteOutMediumFactory.instance()

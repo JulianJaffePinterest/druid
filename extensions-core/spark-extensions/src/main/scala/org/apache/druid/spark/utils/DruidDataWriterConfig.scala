@@ -36,8 +36,6 @@ class DruidDataWriterConfig(
                            ) extends Serializable
 
 object DruidDataWriterConfig {
-  val partitionDimensionsKey: String = "partitionDimensions"
-
   // IndexSpec keys
   val bitmapTypeKey: String = "bitmapType"
   val bitmapTypeCompressOnSerializationKey: String = "true"

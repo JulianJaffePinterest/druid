@@ -20,18 +20,16 @@
 package org.apache.druid.spark.v2
 
 import java.util.Optional
-
 import org.apache.druid.java.util.common.ISE
 import org.apache.druid.segment.loading.DataSegmentKiller
 import org.apache.druid.spark.MAPPER
 import org.apache.druid.spark.registries.SegmentWriterRegistry
-import org.apache.druid.spark.utils.{DruidDataSourceOptionKeys, DruidMetadataClient, Logging}
+import org.apache.druid.spark.utils.{DruidDataSourceOptionKeys, DruidMetadataClient, Logging, SegmentRationalizer}
 import org.apache.druid.timeline.DataSegment
 import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.sources.v2.DataSourceOptions
-import org.apache.spark.sql.sources.v2.writer.{DataSourceWriter, DataWriterFactory,
-  WriterCommitMessage}
+import org.apache.spark.sql.sources.v2.writer.{DataSourceWriter, DataWriterFactory, WriterCommitMessage}
 import org.apache.spark.sql.types.StructType
 
 import scala.collection.JavaConverters.seqAsJavaListConverter
@@ -57,6 +55,13 @@ class DruidDataSourceWriter(
   /**
     * Commit the segment locations listed in WRITERCOMMITMESSAGES to a Druid metadata server.
     *
+    * This is the only place we have a centralized view of all generated segments, so we also take this opportunity
+    * to rationalize the shard specs of the generated segments to ensure that generated partitions form a contiguous and
+    * complete segment for each interval written. In the future, this could allow respecting a maxRowsPerPartition
+    * argument and writing to multiple data sources from a single .write() call. By default this rationalization occurs
+    * whenever a partition map is not specified, but it can also be controlled directly via the "rationalizeSegments"
+    * configuration.
+    *
     * @param writerCommitMessages An array of messages containing sequences of serialized
     *                             DataSegments written to deep storage.
     */
@@ -64,10 +69,18 @@ class DruidDataSourceWriter(
     val segments =
       writerCommitMessages.flatMap(_.asInstanceOf[DruidWriterCommitMessage].serializedSegments)
 
-    logInfo(s"Committing the following segments: ${segments.mkString(", ")}")
+    val isPartitionMapDefined = dataSourceOptions.get(DruidDataSourceOptionKeys.partitionMapKey).isPresent
+    val rationalizedSegments = if (
+      dataSourceOptions.getBoolean(DruidDataSourceOptionKeys.rationalizeSegmentsKey,!isPartitionMapDefined)
+    ) {
+      SegmentRationalizer.rationalizeSegments(segments.map(MAPPER.readValue(_, classOf[DataSegment])))
+    } else {
+      segments.map(MAPPER.readValue(_, classOf[DataSegment])).toSeq
+    }
 
-    metadataClient.publishSegments(
-      segments.map(MAPPER.readValue(_, classOf[DataSegment])).toList.asJava, MAPPER)
+    logInfo(s"Committing the following segments: ${rationalizedSegments.map(_.toString).mkString(", ")}")
+
+    metadataClient.publishSegments(rationalizedSegments.toList.asJava, MAPPER)
   }
 
   // Clean up segments in deep storage but not in metadata

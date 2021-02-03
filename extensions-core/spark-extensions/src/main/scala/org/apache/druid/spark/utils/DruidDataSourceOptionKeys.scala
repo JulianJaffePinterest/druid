@@ -45,28 +45,31 @@ object DruidDataSourceOptionKeys {
   val excludedDimensionsKey: String = "excludedDimensions"
   val segmentGranularity: String = "segmentGranularity" // Default: All
   val queryGranularity: String = "queryGranularity" // Default: None
-  val partitionsMapKey: String = "partitionMap"
+  val partitionMapKey: String = "partitionMap"
   val deepStorageTypeKey: String = "deepStorageType" // Default: local
   val timestampColumnKey: String = "timestampColumn" // Default: ts
   val timestampFormatKey: String = "timestampFormat" // Default: auto
-  val shardSpecTypeKey: String = "shardSpecType" // Default: linear
+  val shardSpecTypeKey: String = "shardSpecType" // Default: numbered
   val rollUpSegmentsKey: String = "rollUpSegments" // Default: true
   val rowsPerPersistKey: String = "rowsPerPersist" // Default: 2000000
+  val rationalizeSegmentsKey: String = "rationalizeSegments" // Default: true
 
-  // Local SegmentWriter Configs
-  val localDeepStorageTypeKey: String = "local"
-  val localStorageDirectoryKey: String = "storageDirectory"
+  // Shared SegmentWriter Configs
+  val storageDirectoryKey: String = "storageDirectory"
 
   // HDFS SegmentWriter Configs
   val hdfsDeepStorageTypeKey: String = "hdfs"
   val hdfsHadoopConfKey: String = "hadoopConf"
-  val hdfsPusherConfigKey: String = "hdfsPusherConfig"
 
   // S3 SegmentWriter Configs
-  val s3DeepStorageTypeKey: String = "s3"
   val s3ServerSideEncryptionConfigKey: String = "s3ServerSideEncryptionConfig"
-  val s3DataSegmentPusherConfigKey: String = "s3DataSegmentPusherConfig"
+  val s3BaseKeyKey: String = "baseKey"
+  val s3BucketKey: String = "bucket"
+  val s3DisableACLKey: String = "disableAcl" // Default: false
+  val s3MaxListingLengthKey: String = "maxListingLength" // Default: 1024
+  val s3UseS3ASchemaKey: String = "useS3SchemaKey" // Default: true (NOTE THIS DIFFERS FROM S3DataSegmentPusherConfig!)
   val s3InputDataConfigKey: String = "s3InputDataConfig"
+  val s3ServerSideEncryptionKey: String = "sse"
 
   // Google SegmentWriter Configs
   val googleDeepStorageTypeKey: String = "google"

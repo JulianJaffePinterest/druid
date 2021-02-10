@@ -32,7 +32,7 @@ import scala.collection.JavaConverters.seqAsJavaListConverter
 
 package object spark {
 
-  private[spark] val MAPPER: ObjectMapper = new DefaultObjectMapper()
+  val MAPPER: ObjectMapper = new DefaultObjectMapper()
 
   private val injectableValues: InjectableValues =
     new InjectableValues.Std()

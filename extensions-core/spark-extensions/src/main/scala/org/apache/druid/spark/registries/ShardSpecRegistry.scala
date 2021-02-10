@@ -68,12 +68,23 @@ object ShardSpecRegistry extends Logging {
     registeredShardSpecCreationFunctions(shardSpecType)(shardSpecProperties)
   }
 
+  /**
+    * Given a source ShardSpec SPEC, a partition number PARTITIONNUM, and the total number of partitions for a segment
+    * NUMPARTITIONS, returns a shard spec sharing the same shard-spec specific properties with SPEC but with the
+    * partition number and number of core partitions overwritten to match this function's arguments.
+    *
+    * @param spec The source spec to use as a base
+    * @param partitionNum The new partition number to assign to the returned shard spec
+    * @param numPartitions The new number of core partitions to assign to the returned shard spec
+    * @return A ShardSpec of the same type as SPEC, but with the partition number and number of core partitions updated
+    *         to match PARTITIONNUM and NUMPARTITIONS.
+    */
   def updateShardSpec(
-                       baseShardSpec: ShardSpec,
+                       spec: ShardSpec,
                        partitionNum: Int,
                        numPartitions: Int
                      ): ShardSpec = {
-    val shardSpecType = getShardSpecTypeFromClass(baseShardSpec)
+    val shardSpecType = getShardSpecTypeFromClass(spec)
     if (!registeredShardSpecUpdateFunctions.contains(shardSpecType)) {
       if (knownTypes.keySet.contains(shardSpecType)) {
         registerByType(shardSpecType)
@@ -82,7 +93,7 @@ object ShardSpecRegistry extends Logging {
           shardSpecType)
       }
     }
-    registeredShardSpecUpdateFunctions(shardSpecType)(baseShardSpec, partitionNum, numPartitions)
+    registeredShardSpecUpdateFunctions(shardSpecType)(spec, partitionNum, numPartitions)
   }
 
   private[registries] def getShardSpecTypeFromClass(shardSpec: ShardSpec): String = {

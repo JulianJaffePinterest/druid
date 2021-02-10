@@ -130,23 +130,22 @@ object SegmentWriterRegistry extends Logging {
               pusherConfig.setStorageDirectory(
                 properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.storageDirectoryKey))
               )
+              val conf = DeepStorageConstructorHelpers.createHadoopConfiguration(properties)
+
               new HdfsDataSegmentPusher(
                 pusherConfig,
-                MAPPER.readValue[Configuration](
-                  properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.hdfsHadoopConfKey)),
-                  new TypeReference[Configuration] {}
-                ),
+                conf,
                 MAPPER
             )
             },
             (dataSourceOptions: DataSourceOptions) => {
+              val properties = dataSourceOptions.asMap().asScala.toMap
               val pusherConfig = new HdfsDataSegmentPusherConfig
               pusherConfig.setStorageDirectory(dataSourceOptions.get(DruidDataSourceOptionKeys.hdfsHadoopConfKey).get)
+              val conf = DeepStorageConstructorHelpers.createHadoopConfiguration(properties)
+
               new HdfsDataSegmentKiller(
-                MAPPER.readValue[Configuration](
-                  dataSourceOptions.get(DruidDataSourceOptionKeys.hdfsHadoopConfKey).get,
-                  new TypeReference[Configuration] {}
-                ),
+                conf,
                 pusherConfig
               )
             }
@@ -180,76 +179,68 @@ object SegmentWriterRegistry extends Logging {
       DruidDataSourceOptionKeys.googleDeepStorageTypeKey -> (
         () => register(
           DruidDataSourceOptionKeys.googleDeepStorageTypeKey,
-          (properties: Map[String, String]) =>
-          new GoogleDataSegmentPusher(
-            MAPPER.readValue[GoogleStorage](
-              properties.get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.googleStorageConfigKey)).toString,
-              new TypeReference[GoogleStorage] {}
-            ),
-            MAPPER.readValue[GoogleAccountConfig](
-              properties.get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.googleAccountConfigKey)).toString,
-              new TypeReference[GoogleAccountConfig] {}
+          (properties: Map[String, String]) => {
+            val accountConfig = DeepStorageConstructorHelpers.createGoogleAcountConfig(properties)
+
+            new GoogleDataSegmentPusher(
+              MAPPER.readValue[GoogleStorage](
+                properties.get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.googleStorageConfigKey)).toString,
+                new TypeReference[GoogleStorage] {}
+              ),
+              accountConfig
             )
-          ),
-          (dataSourceOptions: DataSourceOptions) =>
+          },
+          (dataSourceOptions: DataSourceOptions) => {
+            val properties = dataSourceOptions.asMap().asScala.toMap
+            val accountConfig = DeepStorageConstructorHelpers.createGoogleAcountConfig(properties)
+            val inputConfig = DeepStorageConstructorHelpers.createGoogleInputDataConfig(properties)
+
             new GoogleDataSegmentKiller(
               MAPPER.readValue[GoogleStorage](
                 dataSourceOptions.get(DruidDataSourceOptionKeys.googleStorageConfigKey).get,
                 new TypeReference[GoogleStorage] {}
               ),
-              MAPPER.readValue[GoogleAccountConfig](
-                dataSourceOptions.get(DruidDataSourceOptionKeys.googleAccountConfigKey).get,
-                new TypeReference[GoogleAccountConfig] {}
-              ),
-              MAPPER.readValue[GoogleInputDataConfig](
-                dataSourceOptions.get(DruidDataSourceOptionKeys.googleInputDataConfigKey).get,
-                new TypeReference[GoogleInputDataConfig] {}
-              )
+              accountConfig,
+              inputConfig
             )
+          }
         )
       ),
       // AzureStorageDruidModule is package-private
       DruidDataSourceOptionKeys.azureDeepStorageKey -> (
         () => register(
           DruidDataSourceOptionKeys.azureDeepStorageKey,
-          (properties: Map[String, String]) =>
+          (properties: Map[String, String]) => {
+            val azureStorage = DeepStorageConstructorHelpers.createAzureStorage(properties)
+            val accountConfig = DeepStorageConstructorHelpers.createAzureAccountConfig(properties)
+            val segmentConfig = DeepStorageConstructorHelpers.createAzureDataSegmentConfig(properties)
+
             new AzureDataSegmentPusher(
-              MAPPER.readValue[AzureStorage](
-                properties.get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.azureStorageConfigKey)).toString,
-                new TypeReference[AzureStorage] {}
-              ),
-              MAPPER.readValue[AzureAccountConfig](
-                properties.get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.azureAccountConfigKey)).toString,
-                new TypeReference[AzureAccountConfig] {}
-              ),
-              MAPPER.readValue[AzureDataSegmentConfig](
-                properties.get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.azureDataSegmentConfigKey)).toString,
-                new TypeReference[AzureDataSegmentConfig] {}
-              )
-            ),
-          (dataSourceOptions: DataSourceOptions) =>
+              azureStorage,
+              accountConfig,
+              segmentConfig
+            )
+          },
+          (dataSourceOptions: DataSourceOptions) => {
+            val properties = dataSourceOptions.asMap().asScala.toMap
+            val segmentConfig = DeepStorageConstructorHelpers.createAzureDataSegmentConfig(properties)
+            val inputDataConfig = DeepStorageConstructorHelpers.createAzureInputDataConfig(properties)
+            val accountConfig = DeepStorageConstructorHelpers.createAzureAccountConfig(properties)
+            val azureStorage = DeepStorageConstructorHelpers.createAzureStorage(properties)
+            /*val azureCloudBlobIterableFactory =
+              DeepStorageConstructorHelpers.createAzureCloudBlobIterableFactory(properties)*/
+
             new AzureDataSegmentKiller(
-              MAPPER.readValue[AzureDataSegmentConfig](
-                dataSourceOptions.get(DruidDataSourceOptionKeys.azureDataSegmentConfigKey).get,
-                new TypeReference[AzureDataSegmentConfig] {}
-              ),
-              MAPPER.readValue[AzureInputDataConfig](
-                dataSourceOptions.get(DruidDataSourceOptionKeys.azureInputDataConfigKey).get,
-                new TypeReference[AzureInputDataConfig] {}
-              ),
-              MAPPER.readValue[AzureAccountConfig](
-                dataSourceOptions.get(DruidDataSourceOptionKeys.azureAccountConfigKey).get,
-                new TypeReference[AzureAccountConfig] {}
-              ),
-              MAPPER.readValue[AzureStorage](
-                dataSourceOptions.get(DruidDataSourceOptionKeys.azureStorageConfigKey).get,
-                new TypeReference[AzureStorage] {}
-              ),
+              segmentConfig,
+              inputDataConfig,
+              accountConfig,
+              azureStorage,
               MAPPER.readValue[AzureCloudBlobIterableFactory](
                 dataSourceOptions.get(DruidDataSourceOptionKeys.azureCloudBlobIterableFactoryConfigKey).get,
                 new TypeReference[AzureCloudBlobIterableFactory] {}
               )
             )
+          }
         )
       )
     )

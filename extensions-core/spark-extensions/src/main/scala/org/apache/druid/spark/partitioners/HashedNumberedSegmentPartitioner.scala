@@ -32,8 +32,8 @@ import scala.collection.JavaConverters.{collectionAsScalaIterableConverter, mapA
   mapAsScalaMapConverter, seqAsJavaListConverter}
 
 /**
-  * DateAndHashBucketPartitioner adapted from the Meta Markets druid-spark-batch project
-  * https://github.com/metamx/druid-spark-batch/.
+  * Adapted from the Meta Markets druid-spark-batch project https://github.com/metamx/druid-spark-batch/, in particular
+  * the DateAndHashBucketPartitioner and related utility functions.
   *
   * A Spark partitioner to partition rows in a DataFrame into partitions suitable for ingestion into Druid
   * using HashBasedNumberedShardSpecs. The important input piece is PARTMAP, a mapping from Druid time bucket
@@ -43,13 +43,13 @@ import scala.collection.JavaConverters.{collectionAsScalaIterableConverter, mapA
   * @param granularityStr The Druid Granularity to partition by. This must match the granularity used to
   *                       generate PARTMAP
   * @param partMap A mapping from a tuple of Druid time bucket and Druid partition id to corresponding
-  *                Spark partition id. See DateAndHashBucketPartitioner#getSizedPartitionMap
+  *                Spark partition id. See HashedNumberedSegmentPartitioner#getSizedPartitionMap
   * @param partitionDims The set of dimensions to hash using PARTITIONFUNCTION. If this is not specified,
   *                      all dimension plus the bucket time will be used
   * @param partitionFunction The function to use to hash PARTITIONDIMS. Defaults to MURMUR3_32_ABS.
   *                          See HashPartitionFunction for more details.
   */
-class DateAndHashBucketPartitioner(
+class HashedNumberedSegmentPartitioner(
                              granularityStr: String,
                              partMap: Map[(Long, Long), Int],
                              partitionDims: Option[Set[String]] = None,
@@ -123,7 +123,7 @@ class DateAndHashBucketPartitioner(
   }
 }
 
-object DateAndHashBucketPartitioner {
+object HashedNumberedSegmentPartitioner {
   /**
     * Given a map of buckets to row counts for those buckets, return a map of
     * (bucket, druid partition id) -> spark partition id. Each spark partition id will have at most ROWSPERPARTITION
@@ -134,9 +134,9 @@ object DateAndHashBucketPartitioner {
     *
     * val df = inputDf
     * val bucketedRdd = PartitionMapProvider.bucketDf(df, "tsCol", "tsFormat", "segmentGranularityString")
-    * val partitioner = new DateAndHashBucketPartitioner(
+    * val partitioner = new HashedNumberedSegmentPartitioner(
     *   "segmentGranularityString",
-    *   DateAndHashBucketPartitioner.getSizedPartitionMap(
+    *   HashedNumberedSegmentPartitioner.getSizedPartitionMap(
     *     PartitionMapProvider.getCountByBucket(bucketedRdd), 5000000L)
     * )
     * sparkSession.createDataFrame(

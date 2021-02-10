@@ -20,7 +20,8 @@
 package org.apache.druid.spark.v2
 
 import org.apache.druid.java.util.common.StringUtils
-import org.apache.druid.spark.{MAPPER, SparkFunSuite, TryWithResources}
+import org.apache.druid.spark.utils.TryWithResources
+import org.apache.druid.spark.{MAPPER, SparkFunSuite}
 import org.apache.druid.timeline.DataSegment
 import org.apache.spark.sql.{DataFrame, Row, SaveMode}
 import org.apache.spark.sql.sources.v2.DataSourceOptions

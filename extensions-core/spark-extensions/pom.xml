@@ -107,6 +107,11 @@
             <artifactId>postgresql-metadata-storage</artifactId>
             <version>${project.parent.version}</version>
         </dependency>
+        <!--
+          Excluding transitive dependencies from deep storage extensions to keep dependency size manangeable. Users
+          should provide the appropriate jars for their deep storage on their Spark clusters or depend on them directly
+          in their code.
+         -->
         <dependency>
             <groupId>org.apache.druid.extensions</groupId>
             <artifactId>druid-azure-extensions</artifactId>
@@ -116,6 +121,12 @@
             <groupId>org.apache.druid.extensions</groupId>
             <artifactId>druid-google-extensions</artifactId>
             <version>${project.parent.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.druid.extensions</groupId>
@@ -126,6 +137,12 @@
             <groupId>org.apache.druid.extensions</groupId>
             <artifactId>druid-s3-extensions</artifactId>
             <version>${project.parent.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>commons-io</groupId>

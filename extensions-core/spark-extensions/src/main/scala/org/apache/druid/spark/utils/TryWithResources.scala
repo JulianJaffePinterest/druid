@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.druid.spark
+package org.apache.druid.spark.utils
 
 import scala.util.control.{ControlThrowable, NonFatal}
 
@@ -42,17 +42,17 @@ trait TryWithResources {
     * A helper function to duplicate Java's try-with-resources construction. Mix in this trait and then call like so:
     * val resource = new ResourceImplementingAutoCloseable()
     * tryWithResources(resource){r =>
-    *     r.doSomething()
+    * r.doSomething()
     * }
     *
     * or, if desired,
     *
     * tryWithResources(new ResourceImplementingAutoCloseable()){ resouce =>
-    *     resource.doSomething()
+    * resource.doSomething()
     * }
     *
     * @param resource The AutoCloseable resource to use in FUNC.
-    * @param func The function block to execute (think of this as the try block).
+    * @param func     The function block to execute (think of this as the try block).
     * @tparam T Any subtype of AutoCloseable.
     * @tparam V The result type of FUNC.
     * @return The result of executing FUNC with RESOURCE.
@@ -62,7 +62,7 @@ trait TryWithResources {
       func(resource)
     } catch {
       // Clean up for InterruptedExceptions and ControlThrowables, not just NonFatal exceptions
-      case e @ (NonFatal(_) | _: InterruptedException | _: ControlThrowable) =>
+      case e@(NonFatal(_) | _: InterruptedException | _: ControlThrowable) =>
         try {
           resource.close()
         } catch {
@@ -93,13 +93,13 @@ trait TryWithResources {
     * val fileResource = new ResourceImplementingAutoCloseable()
     * val writerResource = new OtherAutoCloseable()
     * tryWithResources(Seq(fileResource, writerResource)){resources =>
-    *     val file = resources(0)
-    *     val writer = resources(1)
-    *     writer.write(file, data)
+    * val file = resources(0)
+    * val writer = resources(1)
+    * writer.write(file, data)
     * }
     *
     * @param resources A list of AutoCloseable resources to use in FUNC.
-    * @param func The function block to execute (think of this as the try block).
+    * @param func      The function block to execute (think of this as the try block).
     * @tparam T Any subtype of AutoCloseable.
     * @tparam V The result type of FUNC.
     * @return The result of executing FUNC with RESOURCES.
@@ -109,7 +109,7 @@ trait TryWithResources {
       func(resources)
     } catch {
       // Clean up for InterruptedExceptions and ControlThrowables, not just NonFatal exceptions
-      case e @ (NonFatal(_) | _: InterruptedException | _: ControlThrowable) =>
+      case e@(NonFatal(_) | _: InterruptedException | _: ControlThrowable) =>
         throw closeAllResourcesMergingExceptions(resources, e)
     } finally {
       closeAllResourcesFinally(resources)
@@ -120,21 +120,21 @@ trait TryWithResources {
     * A helper function to duplicate Java's try-with-resources construction. Mix in this trait and then call like so:
     * val resources = (new ResourceImplementingAutoCloseable(), new ResourceImplementingAutoCloseable())
     * tryWithResources(resources){
-    *     case (first, second) =>
-    *         first.doSomething()
-    *         second.doSomething()
+    * case (first, second) =>
+    * first.doSomething()
+    * second.doSomething()
     * }
     *
     * or, if desired,
     *
     * tryWithResources(new ResourceImplementingAutoCloseable(), new ResourceImplementingAutoCloseable){
-    *     case (first, second) =>
-    *         first.doSomething()
-    *         second.doSomething
+    * case (first, second) =>
+    * first.doSomething()
+    * second.doSomething
     * }
     *
     * @param resources A tuple of AutoCloseable resources to use in FUNC.
-    * @param func The function block to execute (think of this as the try block).
+    * @param func      The function block to execute (think of this as the try block).
     * @tparam T Any subtype of AutoCloseable.
     * @tparam V The result type of FUNC.
     * @return The result of executing FUNC with RESOURCES.
@@ -145,7 +145,7 @@ trait TryWithResources {
       func(resources)
     } catch {
       // Clean up for InterruptedExceptions and ControlThrowables, not just NonFatal exceptions
-      case e @ (NonFatal(_) | _: InterruptedException | _: ControlThrowable) =>
+      case e@(NonFatal(_) | _: InterruptedException | _: ControlThrowable) =>
         throw closeAllResourcesMergingExceptions(closeableResources, e)
     } finally {
       closeAllResourcesFinally(closeableResources)
@@ -156,23 +156,23 @@ trait TryWithResources {
     * A helper function to duplicate Java's try-with-resources construction. Mix in this trait and then call like so:
     * val resources = (new ResourceImplementingAutoCloseable(), new ResourceImplementingAutoCloseable(), ...)
     * tryWithResources(resources){
-    *     case (first, second, ...) =>
-    *         first.doSomething()
-    *         second.doSomething()
-    *         ...
+    * case (first, second, ...) =>
+    * first.doSomething()
+    * second.doSomething()
+    * ...
     * }
     *
     * or, if desired,
     *
     * tryWithResources(new ResourceImplementingAutoCloseable(), new ResourceImplementingAutoCloseable, ...){
-    *     case (first, second, ...) =>
-    *         first.doSomething()
-    *         second.doSomething()
-    *         ...
+    * case (first, second, ...) =>
+    * first.doSomething()
+    * second.doSomething()
+    * ...
     * }
     *
     * @param resources A tuple of AutoCloseable resources to use in FUNC.
-    * @param func The function block to execute (think of this as the try block).
+    * @param func      The function block to execute (think of this as the try block).
     * @tparam T Any subtype of AutoCloseable.
     * @tparam V The result type of FUNC.
     * @return The result of executing FUNC with RESOURCES.
@@ -183,7 +183,7 @@ trait TryWithResources {
       func(resources)
     } catch {
       // Clean up for InterruptedExceptions and ControlThrowables, not just NonFatal exceptions
-      case e @ (NonFatal(_) | _: InterruptedException | _: ControlThrowable) =>
+      case e@(NonFatal(_) | _: InterruptedException | _: ControlThrowable) =>
         throw closeAllResourcesMergingExceptions(closeableResources, e)
     } finally {
       closeAllResourcesFinally(closeableResources)
@@ -194,23 +194,23 @@ trait TryWithResources {
     * A helper function to duplicate Java's try-with-resources construction. Mix in this trait and then call like so:
     * val resources = (new ResourceImplementingAutoCloseable(), new ResourceImplementingAutoCloseable(), ...)
     * tryWithResources(resources){
-    *     case (first, second, ...) =>
-    *         first.doSomething()
-    *         second.doSomething()
-    *         ...
+    * case (first, second, ...) =>
+    * first.doSomething()
+    * second.doSomething()
+    * ...
     * }
     *
     * or, if desired,
     *
     * tryWithResources(new ResourceImplementingAutoCloseable(), new ResourceImplementingAutoCloseable, ...){
-    *     case (first, second, ...) =>
-    *         first.doSomething()
-    *         second.doSomething()
-    *         ...
+    * case (first, second, ...) =>
+    * first.doSomething()
+    * second.doSomething()
+    * ...
     * }
     *
     * @param resources A tuple of AutoCloseable resources to use in FUNC.
-    * @param func The function block to execute (think of this as the try block).
+    * @param func      The function block to execute (think of this as the try block).
     * @tparam T Any subtype of AutoCloseable.
     * @tparam V The result type of FUNC.
     * @return The result of executing FUNC with RESOURCES.
@@ -221,7 +221,7 @@ trait TryWithResources {
       func(resources)
     } catch {
       // Clean up for InterruptedExceptions and ControlThrowables, not just NonFatal exceptions
-      case e @ (NonFatal(_) | _: InterruptedException | _: ControlThrowable) =>
+      case e@(NonFatal(_) | _: InterruptedException | _: ControlThrowable) =>
         throw closeAllResourcesMergingExceptions(closeableResources, e)
     } finally {
       closeAllResourcesFinally(closeableResources)
@@ -232,23 +232,23 @@ trait TryWithResources {
     * A helper function to duplicate Java's try-with-resources construction. Mix in this trait and then call like so:
     * val resources = (new ResourceImplementingAutoCloseable(), new ResourceImplementingAutoCloseable(), ...)
     * tryWithResources(resources){
-    *     case (first, second, ...) =>
-    *         first.doSomething()
-    *         second.doSomething()
-    *         ...
+    * case (first, second, ...) =>
+    * first.doSomething()
+    * second.doSomething()
+    * ...
     * }
     *
     * or, if desired,
     *
     * tryWithResources(new ResourceImplementingAutoCloseable(), new ResourceImplementingAutoCloseable, ...){
-    *     case (first, second, ...) =>
-    *         first.doSomething()
-    *         second.doSomething()
-    *         ...
+    * case (first, second, ...) =>
+    * first.doSomething()
+    * second.doSomething()
+    * ...
     * }
     *
     * @param resources A tuple of AutoCloseable resources to use in FUNC.
-    * @param func The function block to execute (think of this as the try block).
+    * @param func      The function block to execute (think of this as the try block).
     * @tparam T Any subtype of AutoCloseable.
     * @tparam V The result type of FUNC.
     * @return The result of executing FUNC with RESOURCES.
@@ -259,7 +259,7 @@ trait TryWithResources {
       func(resources)
     } catch {
       // Clean up for InterruptedExceptions and ControlThrowables, not just NonFatal exceptions
-      case e @ (NonFatal(_) | _: InterruptedException | _: ControlThrowable) =>
+      case e@(NonFatal(_) | _: InterruptedException | _: ControlThrowable) =>
         throw closeAllResourcesMergingExceptions(closeableResources, e)
     } finally {
       closeAllResourcesFinally(closeableResources)
@@ -316,7 +316,7 @@ trait TryWithResources {
           exOpt
         } catch {
           case e: Throwable =>
-            Some(exOpt.fold(e){ex =>
+            Some(exOpt.fold(e) { ex =>
               ex.addSuppressed(e)
               ex
             })

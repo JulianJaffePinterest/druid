@@ -48,6 +48,8 @@ sparkSession
   .load()
 ```
 
+Filters should be applied to the read-in data frame before any [Spark actions](http://spark.apache.org/docs/2.4.5/api/scala/index.html#org.apache.spark.sql.Dataset) are triggered, to allow predicates to be pushed down to the reader and avoid full scans of the underlying Druid data.
+
 ## Writer
 The writer writes Druid segments directly to deep storage and then updates the Druid cluster's metadata, bypassing the running cluster entirely.
 
@@ -90,13 +92,12 @@ DataFrames and generate the corresponding `partitionMap` if necessary, but this 
 than partitioning the DataFrame in the desired manner in the course of preparing the data.
 
 If a "simpler" shard spec such as `NumberedShardSpec` or `LinearShardSpec` is used, a `partitionMap`
-can be provided but is unnecessary unless the names of a segment's directory on deep storage should
+can be provided but is unnecessary unless the name of a segment's directory on deep storage should
 match the segment's id exactly. The writer will rationalize shard specs within time chunks to
 ensure data is atomically loaded in Druid. Care should still be taken in partitioning the DataFrame
 to write regardless.
 
 ## Configuration Reference
-< In progress >
 
 ### Metadata Client Configs
 The properties used to configure the client that interacts with the Druid metadata server directly. Used by both reader and the writer. During early development, `metadataPassword` is expected in plaintext. This will change.
@@ -153,3 +154,38 @@ The properties used to configure the DataSourceWriter when writing data to Druid
 
 ### Deep Storage Configs
 The configuration properties used when interacting with deep storage systems directly. Only used in the writer.
+
+**Caution**: The S3, GCS, and Azure storage configs don't work. Users will have to implement their own segment writers and register them with the SegmentWriterRegistry (and hopefully contribute them back to this warning can be removed! :))
+
+#### Local Deep Storage Config
+`deepStorageType` = `local`
+
+|Key|Description|Required|Default|
+|---|-----------|--------|-------|
+|`storageDirectory`|The location to write segments out to|Yes||
+
+#### HDFS Deep Storage Config
+`deepStorageType` = `hdfs`
+
+|Key|Description|Required|Default|
+|---|-----------|--------|-------|
+|`storageDirectory`|The location to write segments out to|Yes||
+|`hadoopConf`|A Base64 encoded representation of dumping a Hadoop Configuration to a byte array via `.write`|Yes||
+
+#### S3 Deep Storage Config
+`deepStorageType` = `s3`
+
+|Key|Description|Required|Default|
+|---|-----------|--------|-------|
+
+#### GCS Deep Storage Config
+`deepStorageType` = `google`
+
+|Key|Description|Required|Default|
+|---|-----------|--------|-------|
+
+#### Azure Deep Storage Config
+`deepStorageType` = `azure`
+
+|Key|Description|Required|Default|
+|---|-----------|--------|-------|

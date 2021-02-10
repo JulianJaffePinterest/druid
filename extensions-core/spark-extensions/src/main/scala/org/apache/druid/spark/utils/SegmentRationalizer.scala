@@ -21,7 +21,6 @@ package org.apache.druid.spark.utils
 
 import org.apache.druid.spark.registries.ShardSpecRegistry
 import org.apache.druid.timeline.DataSegment
-import org.apache.druid.timeline.partition.ShardSpec
 
 /**
   * A utility class for rationalizing a group of Druid segments into contiguous atomically-swappable segments.
@@ -47,19 +46,20 @@ object SegmentRationalizer extends Logging {
       case ((datasource, interval), intervalSegments) =>
         if (intervalSegments.map(_.getShardSpec.getClass).distinct.size != 1) {
           logWarn("This writer does not know how to rationalize multiple shard spec types for a single interval!")
-          return segments
-        }
-        val versions = intervalSegments.map(_.getVersion)
-        if (versions.distinct.size != 1) {
-          // Rather than aborting all segments or passing back a list of segments to commit and a list of
-          // segments to shadow abort which is way more dangerous than is really safe to handle in the
-          // committer, just warn the user that some segments will be overshadowed and ignored.
-          logWarn(
-            s"More than one version detected for interval ${interval.toString} on dataSource $datasource! " +
-              s"Some segments will be overshadowed!")
-          intervalSegments.groupBy(_.getVersion).flatMap(segments => rationalizeGroupedSegments(segments._2))
+          intervalSegments
         } else {
-          rationalizeGroupedSegments(intervalSegments)
+          val versions = intervalSegments.map(_.getVersion)
+          if (versions.distinct.size != 1) {
+            // Rather than aborting all segments or passing back a list of segments to commit and a list of
+            // segments to shadow abort which is way more dangerous than is really safe to handle in the
+            // committer, just warn the user that some segments will be overshadowed and ignored.
+            logWarn(
+              s"More than one version detected for interval ${interval.toString} on dataSource $datasource! " +
+                s"Some segments will be overshadowed!")
+            intervalSegments.groupBy(_.getVersion).flatMap(segments => rationalizeGroupedSegments(segments._2))
+          } else {
+            rationalizeGroupedSegments(intervalSegments)
+          }
         }
     }.toSeq
   }
@@ -74,22 +74,8 @@ object SegmentRationalizer extends Logging {
   private[utils] def rationalizeGroupedSegments(segments: Seq[DataSegment]): Seq[DataSegment] = {
     val numPartitions = segments.size
     segments.sortBy(_.getShardSpec.getPartitionNum).zipWithIndex.map{
-      case (segment, index) => segment.withShardSpec(createUpdatedShardSpec(segment.getShardSpec, index, numPartitions))
+      case (segment, index) =>
+        segment.withShardSpec(ShardSpecRegistry.updateShardSpec(segment.getShardSpec, index, numPartitions))
     }
-  }
-
-  /**
-    * Given a source ShardSpec SPEC, a partition number PARTITIONNUM, and the total number of partitions for a segment
-    * NUMPARTITIONS, returns a shard spec sharing the same shard-spec specific properties with SPEC but with the
-    * partition number and number of core partitions overwritten to match this function's arguments.
-    *
-    * @param spec The source spec to use as a base
-    * @param partitionNum The new partition number to assign to the returned shard spec
-    * @param numPartitions The new number of core partitions to assign to the returned shard spec
-    * @return A ShardSpec of the same type as SPEC, but with the partition number and number of core partitions updated
-    *         to match PARTITIONNUM and NUMPARTITIONS.
-    */
-  private[utils] def createUpdatedShardSpec(spec: ShardSpec, partitionNum: Int, numPartitions: Int): ShardSpec = {
-    ShardSpecRegistry.updateShardSpec(spec, partitionNum, numPartitions)
   }
 }

@@ -56,22 +56,24 @@ object DruidDataSourceOptionKeys {
 
   // Shared SegmentWriter Configs
   val storageDirectoryKey: String = "storageDirectory"
+  val maxListingLengthKey: String = "maxListingLength" // Default: 1024
+  val connectionStringKey: String = "connectionString"
+  val bucketKey: String = "bucket"
+  val prefixKey: String = "prefix"
 
   // HDFS SegmentWriter Configs
   val hdfsDeepStorageTypeKey: String = "hdfs"
-  val hdfsHadoopConfKey: String = "hadoopConf"
+  val hdfsHadoopConfKey: String = "hadoopConf" // Base64-encoded serialized Configuration
 
   // S3 SegmentWriter Configs
   val s3ServerSideEncryptionConfigKey: String = "s3ServerSideEncryptionConfig"
   val s3BaseKeyKey: String = "baseKey"
-  val s3BucketKey: String = "bucket"
   val s3DisableACLKey: String = "disableAcl" // Default: false
-  val s3MaxListingLengthKey: String = "maxListingLength" // Default: 1024
   val s3UseS3ASchemaKey: String = "useS3SchemaKey" // Default: true (NOTE THIS DIFFERS FROM S3DataSegmentPusherConfig!)
   val s3InputDataConfigKey: String = "s3InputDataConfig"
   val s3ServerSideEncryptionKey: String = "sse"
 
-  // Google SegmentWriter Configs
+  // GCS SegmentWriter Configs
   val googleDeepStorageTypeKey: String = "google"
   val googleStorageConfigKey: String = "googleStorageConfig"
   val googleAccountConfigKey: String = "googleAccountConfig"
@@ -79,9 +81,14 @@ object DruidDataSourceOptionKeys {
 
   // Azure SegmentWriter Configs
   val azureDeepStorageKey: String = "azure"
-  val azureStorageConfigKey: String = "azureStorageConfig"
+  val azureContainerKey: String = "container"
+  val azureProtocolKey: String = "protocol" // Default: https
+  val azureMaxTriesKey: String = "maxTries" // Default: 3
+  val azureAccountKey: String = "account"
+  val azureKeyKey: String = "key"
+  val azurePrimaryStorageUriKey: String = "primaryUri"
+  val azureSecondaryStorageUriKey: String = "secondaryUri"
+  val azurePrefixesKey: String = "prefixes" // Note that there is both a prefix and a prefixes key!
   val azureAccountConfigKey: String = "azureAccountConfig"
-  val azureDataSegmentConfigKey: String = "azureDataSegmentConfig"
-  val azureInputDataConfigKey: String = "azureInputDataConfig"
   val azureCloudBlobIterableFactoryConfigKey: String = "azureCloudBlobIterableFactoryConfig"
 }

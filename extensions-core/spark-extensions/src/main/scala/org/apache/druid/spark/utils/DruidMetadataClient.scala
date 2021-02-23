@@ -32,7 +32,7 @@ import org.apache.druid.spark.registries.SQLConnectorRegistry
 import org.apache.druid.timeline.DataSegment
 import org.skife.jdbi.v2.{DBI, Handle}
 import org.apache.druid.metadata.{MetadataStorageConnectorConfig, MetadataStorageTablesConfig,
-  SQLMetadataConnector}
+  PasswordProvider, SQLMetadataConnector}
 import org.apache.spark.sql.sources.v2.DataSourceOptions
 
 import scala.collection.JavaConverters.asScalaBufferConverter
@@ -43,13 +43,20 @@ class DruidMetadataClient(
                            port: Int,
                            connectUri: String,
                            user: String,
-                           password: String, // TODO: Do this better
+                           passwordProviderSer: String,
                            dbcpMap: Properties,
                            base: String = "druid"
                          ) extends Logging {
   private lazy val druidMetadataTableConfig = MetadataStorageTablesConfig.fromBase(base)
   private lazy val dbcpProperties = new Properties()
   dbcpProperties.putAll(dbcpMap)
+  private lazy val password = if (passwordProviderSer == "") {
+    // Jackson doesn't like deserializing empty strings
+    passwordProviderSer
+  } else {
+    MAPPER.readValue[PasswordProvider](passwordProviderSer,
+      new TypeReference[PasswordProvider] {}).getPassword
+  }
 
   private lazy val connectorConfig: MetadataStorageConnectorConfig =
     new MetadataStorageConnectorConfig

@@ -20,7 +20,9 @@
 # Apache Spark Reader and Writer for Druid
 
 ## Reader
-The reader reads Druid segments from deep storage into Spark. It locates the segments to read and determines their schema if not provided by querying the brokers for the relevant metadata but otherwise does not interact with a running Druid cluster.
+The reader reads Druid segments from deep storage into Spark. It locates the segments to read and determines their
+schema if not provided by querying the brokers for the relevant metadata but otherwise does not interact with a running
+Druid cluster.
 
 Sample Code:
 ```scala
@@ -38,7 +40,8 @@ sparkSession
   .load()
 ```
 
-If you know the schema of the Druid data source you're reading from, you can save needing to determine the schema via calls to the broker with
+If you know the schema of the Druid data source you're reading from, you can save needing to determine the schema via
+calls to the broker with
 ```scala
 sparkSession
   .read
@@ -48,10 +51,12 @@ sparkSession
   .load()
 ```
 
-Filters should be applied to the read-in data frame before any [Spark actions](http://spark.apache.org/docs/2.4.5/api/scala/index.html#org.apache.spark.sql.Dataset) are triggered, to allow predicates to be pushed down to the reader and avoid full scans of the underlying Druid data.
+Filters should be applied to the read-in data frame before any [Spark actions](http://spark.apache.org/docs/2.4.5/api/scala/index.html#org.apache.spark.sql.Dataset)
+are triggered, to allow predicates to be pushed down to the reader and avoid full scans of the underlying Druid data.
 
 ## Writer
-The writer writes Druid segments directly to deep storage and then updates the Druid cluster's metadata, bypassing the running cluster entirely.
+The writer writes Druid segments directly to deep storage and then updates the Druid cluster's metadata, bypassing the
+running cluster entirely.
 
 Sample Code:
 ```scala
@@ -78,7 +83,7 @@ df
 ```
 
 ### Partitioning & `PartitionMap`s
-The segments written by this writer are controller by the calling DataFrame's internal partitioning.
+The segments written by this writer are controlled by the calling DataFrame's internal partitioning.
 If there are many small partitions, or the DataFrame's partitions span output intervals, then many
 small Druid segments will be written with poor overall roll-up. If the DataFrame's partitions are
 skewed, then the Druid segments produced will also be skewed. To avoid this, users should take
@@ -94,13 +99,23 @@ than partitioning the DataFrame in the desired manner in the course of preparing
 If a "simpler" shard spec such as `NumberedShardSpec` or `LinearShardSpec` is used, a `partitionMap`
 can be provided but is unnecessary unless the name of a segment's directory on deep storage should
 match the segment's id exactly. The writer will rationalize shard specs within time chunks to
-ensure data is atomically loaded in Druid. Care should still be taken in partitioning the DataFrame
-to write regardless.
+ensure data is atomically loaded in Druid. Either way, callers should still take care when partitioning DataFrames to
+write to avoid ingesting skewed data or too many small segments.
+
+## Plugin Registries and Druid Extension Support
+One of Druid's strengths is its extensibility. Since these Spark readers and writers will not execute on a Druid cluster
+and won't have the ability to dynamically load classes or integrate with Druid's Guice injectors, Druid extensions can't
+be used directly. Instead, these connectors use a plugin registry architecture, including default plugins that support
+most functionality in `extensions-core`. Custom plugins consisting of a string name and one or more serializable
+generator functions must be registered before the first Spark action which would depend on them is called.
 
 ## Configuration Reference
 
 ### Metadata Client Configs
-The properties used to configure the client that interacts with the Druid metadata server directly. Used by both reader and the writer. During early development, `metadataPassword` is expected in plaintext. This will change.
+The properties used to configure the client that interacts with the Druid metadata server directly. Used by both reader
+and the writer. The `metadataPassword` property can either be provided as a string that will be used as-is or can be
+provided as a serialized PasswordProvider that will be resolved when the metadata client is first instantiated. If a
+custom PasswordProvider is used, be sure to register the provider with the PasswordProviderRegistry before use.
 
 |Key|Description|Required|Default|
 |---|-----------|--------|-------|
@@ -109,7 +124,7 @@ The properties used to configure the client that interacts with the Druid metada
 |`metadataPort`|The metadata server's port|If using derby||
 |`metadataConnectUri`|The URI to use to connect to the metadata server|If not using derby||
 |`metadataUser`|The user to use when connecting to the metadata server|Yes||
-|`metadataPassword`|The password to use when connecting to the metadata server|Yes||
+|`metadataPassword`|The password to use when connecting to the metadata server. This can optionally be a serialized instance of a Druid PasswordProvider or a plain string|Yes||
 |`metadataDbcpProperties`|The connection pooling properties to use when connecting to the metadata server|No||
 |`metadataBaseName`|The base name used when creating Druid metadata tables|No|`druid`|
 
@@ -132,7 +147,8 @@ The properties used to configure the DataSourceReader when reading data from Dru
 
 
 ### Writer Configs
-The properties used to configure the DataSourceWriter when writing data to Druid from Spark. See the [ingestion specs documentation](../../ingestion/index.html#ingestion-specs) for more details.
+The properties used to configure the DataSourceWriter when writing data to Druid from Spark. See the
+[ingestion specs documentation](https://druid.apache.org/docs/0.20.0/ingestion/index.html#ingestion-specs) for more details.
 
 |Key|Description|Required|Default|
 |---|-----------|--------|-------|
@@ -153,9 +169,11 @@ The properties used to configure the DataSourceWriter when writing data to Druid
 |`rationalizeSegments`|Whether or not to rationalize segments to ensure contiguity and completeness|No|True if `partitionMap` is not set, False otherwise|
 
 ### Deep Storage Configs
-The configuration properties used when interacting with deep storage systems directly. Only used in the writer.
+The configuration properties used when interacting with deep storage systems directly. Only used in the writer. (The
+reader interacts with deep storage as well, but for now operates purely off the metadata returned in segment LoadSpecs).
 
-**Caution**: The S3, GCS, and Azure storage configs don't work. Users will have to implement their own segment writers and register them with the SegmentWriterRegistry (and hopefully contribute them back to this warning can be removed! :))
+**Caution**: The Azure storage config doesn't work. Users will have to implement their own segment writers
+and register them with the SegmentWriterRegistry (and hopefully contribute them back to this warning can be removed! :))
 
 #### Local Deep Storage Config
 `deepStorageType` = `local`
@@ -175,14 +193,47 @@ The configuration properties used when interacting with deep storage systems dir
 #### S3 Deep Storage Config
 `deepStorageType` = `s3`
 
+These configs generally shadow the [Connecting to S3 configuration](https://druid.apache.org/docs/0.20.0/development/extensions-core/s3.html#connecting-to-s3-configuration)
+section of the Druid s3 extension doc, including in the inconsistent use of `disable` vs `enable` as boolean property
+name prefixes
+
 |Key|Description|Required|Default|
 |---|-----------|--------|-------|
+|`bucket`|The S3 bucket to write segments to|Yes||
+|`baseKey`|The base key to prefix segments with when writing to S3|Yes||
+|`maxListingLength`|The maximum number of input files matching a prefix to retrieve or delete in one call|No|1000|
+|`disableAcl`|Whether or not to disable ACLs on the output segments. If this is false, additional S3 permissions are required|No|False|
+|`useS3SchemaKey`|Whether or not to use the `s3a` filesystem when writing segments to S3.|No|True|
+|`awsCredentialsConfig`|A serialized instance of an `AWSCredentialConfig`|Either this, the next 2 properties, or `s3FileSessionCredentialsKey` are required||
+|`s3AccessKey`|The S3 access key. See [S3 authentication methods](https://druid.apache.org/docs/0.20.0/development/extensions-core/s3.html#s3-authentication-methods) for more details||
+|`s3SecretKey`|The S3 secret key. See [S3 authentication methods](https://druid.apache.org/docs/0.20.0/development/extensions-core/s3.html#s3-authentication-methods) for more details||
+|`s3FileSessionCredentialsKey`|The path to a properties file containing S3 session credentials. See [S3 authentication methods](https://druid.apache.org/docs/0.20.0/development/extensions-core/s3.html#s3-authentication-methods) for more details||
+|`awsProxyConfig`|A serialized instance of an `awsProxyConfig`|Either this or the next 4 properties are required||
+|`s3ProxyHost`|The proxy host to connect to S3 through|||
+|`s3ProxyPort`|The proxy port to connect to S3 through| |-1|
+|`s3ProxyUser`|The user name to use when connecting through a proxy|||
+|`s3ProxyPassword`|The password to use when connecting through a proxy. Plain string|||
+|`awsEndpointConfig`|A serialized instance of an `awsEndpointConfig`|Either this or the next 2 properties are required||
+|`s3EndpointConfigUrl`|The S3 service endpoint to connect to||
+|`s3EndpointConfigSigningRegion`|The region to use for singing requests (e.g. `us-west-1`)|||
+|`awsClientConfig`|A serialized instance of an `awsClientConfig`|Either this or the next 4 properties are required||
+|`s3ClientConfigProtocol`|The communication protocol to use when communicating with AWS. This configuration is ignored if `s3EndpointConfigUrl` includes the protocol| |`https`|
+|`s3DisableChunkedEncoding`|Whether or not to disable chunked encoding| |False| <!-- Keeping the irritating inconsistency in property naming here to match the S3 extension names -->
+|`s3EnablePathStyleAccess`|Whether or not to enable path-style access| |False|
+|`s3ForceGlobalBucketAccessEnabled`|Whether or not to force global bucket access| |False|
+|`s3StorageConfig`|A serialized instance of an `S3StorageConfig`|No||
+|`s3ServerSideEncryptionTypeKey`|The type of Server Side Encryption to use (`s3`, `kms`, or `custom`). If not set, server side encryption will not be used||
+|`s3ServerSideEncryptionKmsKeyId`|The keyId to use for `kms` server side encryption|Only if `s3ServerSideEncryptionTypeKey` is `kms`|
+|`s3ServerSideEncryptionCustom`|The base-64 encoded key to use for `custom` server side encryption|Only if `s3ServerSideEncryptionTypeKey` is `custom`|
 
 #### GCS Deep Storage Config
 `deepStorageType` = `google`
 
 |Key|Description|Required|Default|
 |---|-----------|--------|-------|
+|`bucket`|The GCS bucket to write segments to|Yes||
+|`prefix`|The base key to prefix segments with when writing to GCS|Yes||
+|`maxListingLength`|The maximum number of input files matching a prefix to retrieve or delete in one call|No|1024|
 
 #### Azure Deep Storage Config
 `deepStorageType` = `azure`

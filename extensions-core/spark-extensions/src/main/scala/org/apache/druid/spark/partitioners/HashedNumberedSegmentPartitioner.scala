@@ -80,8 +80,8 @@ class HashedNumberedSegmentPartitioner(
   override def getPartition(key: Any): Int = key match {
     case (k: Long, v: AnyRef) =>
       val eventMap: Map[String, AnyRef] = v match {
-        case mm: JMap[String, AnyRef] => mm.asScala.toMap
-        case mm: Map[String, AnyRef] => mm
+        case mm: JMap[String, AnyRef] @unchecked => mm.asScala.toMap
+        case mm: Map[String, AnyRef] @unchecked => mm
         case x => throw new IAE(s"Unknown value type ${x.getClass} : [$x]")
       }
       val dateBucket = granularity.bucketStart(DateTimes.utc(k)).getMillis

@@ -20,6 +20,8 @@
 package org.apache.druid.spark.utils
 
 object DruidDataSourceOptionKeys {
+  // TODO: Replace all of these unique keys with namespaced keys
+
   // Metadata Client Configs
   val metadataDbTypeKey: String = "metadataDbType"
   val metadataHostKey: String = "metadataHost" // Default: localhost
@@ -66,18 +68,33 @@ object DruidDataSourceOptionKeys {
   val hdfsHadoopConfKey: String = "hadoopConf" // Base64-encoded serialized Configuration
 
   // S3 SegmentWriter Configs
-  val s3ServerSideEncryptionConfigKey: String = "s3ServerSideEncryptionConfig"
+  val s3AwsCredentialsConfigKey: String = "awsCredentialsConfig"
+  val s3AccessKeyKey: String = "s3AccessKey"
+  val s3SecretKeyKey: String = "s3SecretKey"
+  val s3FileSessionCredentialsKey: String = "s3FileSessionCredentialsKey"
+  val s3AwsProxyConfigKey: String = "awsProxyConfig"
+  val s3ProxyHostKey: String = "s3ProxyHost"
+  val s3ProxyPortKey: String = "s3ProxyPort" // Default -1
+  val s3ProxyUserKey: String = "s3ProxyUser"
+  val s3ProxyPasswordKey: String = "s3ProxyPassword"
+  val s3AwsEndpointConfigKey: String = "awsEndpointConfig"
+  val s3EndpointConfigUrlKey: String = "s3EndpointConfigUrl"
+  val s3EndpointConfigSigningRegionKey: String = "s3EndpointConfigSigningRegion"
+  val s3AwsClientConfigKey: String = "awsClientConfig"
+  val s3ClientConfigProtocolKey: String = "s3ClientConfigProtocol" // Default: https
+  val s3ClientConfigDisableChunkedEncodingKey: String = "s3DisableChunkedEncoding" // Default: false
+  val s3ClientConfigEnablePathStyleAccessKey: String = "s3EnablePathStyleAccess" // Default: false
+  val s3ClientConfigForceGlobalBucketAccessEnabledKey: String = "s3ForceGlobalBucketAccessEnabled" // Default: false
+  val s3StorageConfigKey: String = "s3StorageConfig"
+  val s3ServerSideEncryptionTypeKey: String = "s3ServerSideEncryptionType"
+  val s3ServerSideEncryptionKmsKeyIdKey: String = "s3ServerSideEncryptionKmsKeyId"
+  val s3ServerSideEncryptionCustomKeyKey: String = "s3ServerSideEncryptionCustomKey"
   val s3BaseKeyKey: String = "baseKey"
   val s3DisableACLKey: String = "disableAcl" // Default: false
-  val s3UseS3ASchemaKey: String = "useS3SchemaKey" // Default: true (NOTE THIS DIFFERS FROM S3DataSegmentPusherConfig!)
-  val s3InputDataConfigKey: String = "s3InputDataConfig"
-  val s3ServerSideEncryptionKey: String = "sse"
+  val s3UseS3ASchemaKey: String = "useS3Schema" // Default: true (NOTE THIS DIFFERS FROM S3DataSegmentPusherConfig!)
 
   // GCS SegmentWriter Configs
   val googleDeepStorageTypeKey: String = "google"
-  val googleStorageConfigKey: String = "googleStorageConfig"
-  val googleAccountConfigKey: String = "googleAccountConfig"
-  val googleInputDataConfigKey: String = "googleInputDataConfig"
 
   // Azure SegmentWriter Configs
   val azureDeepStorageKey: String = "azure"

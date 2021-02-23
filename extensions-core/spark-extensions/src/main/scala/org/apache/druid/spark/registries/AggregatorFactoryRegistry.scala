@@ -34,5 +34,4 @@ object AggregatorFactoryRegistry {
     // Cheat
     MAPPER.registerSubtypes(new NamedType(factory.getClass, name))
   }
-
 }

@@ -27,16 +27,13 @@ import org.apache.druid.segment.loading.{DataSegmentKiller, DataSegmentPusher,
   LocalDataSegmentKiller, LocalDataSegmentPusher, LocalDataSegmentPusherConfig}
 import org.apache.druid.spark.utils.{DeepStorageConstructorHelpers, DruidDataSourceOptionKeys, Logging}
 import org.apache.druid.spark.MAPPER
-import org.apache.druid.storage.azure.{AzureAccountConfig, AzureCloudBlobIterableFactory,
-  AzureDataSegmentConfig, AzureDataSegmentKiller, AzureDataSegmentPusher, AzureInputDataConfig,
-  AzureStorage}
-import org.apache.druid.storage.google.{GoogleAccountConfig, GoogleDataSegmentKiller,
-  GoogleDataSegmentPusher, GoogleInputDataConfig, GoogleStorage}
+import org.apache.druid.storage.azure.{AzureCloudBlobIterableFactory, AzureDataSegmentKiller,
+  AzureDataSegmentPusher}
+import org.apache.druid.storage.google.{GoogleDataSegmentKiller, GoogleDataSegmentPusher, GoogleStorage}
 import org.apache.druid.storage.hdfs.{HdfsDataSegmentKiller, HdfsDataSegmentPusher,
   HdfsDataSegmentPusherConfig}
 import org.apache.druid.storage.s3.{S3DataSegmentKiller, S3DataSegmentPusher,
   S3StorageDruidModule, ServerSideEncryptingAmazonS3}
-import org.apache.hadoop.conf.Configuration
 import org.apache.spark.sql.sources.v2.DataSourceOptions
 
 import scala.collection.JavaConverters.mapAsScalaMapConverter
@@ -116,10 +113,6 @@ object SegmentWriterRegistry extends Logging {
               })
           )
         ),
-      // TODO: Adding these Pushers and Killers as placeholders. The confs are almost certainly not
-      //  serializable, and we shouldn't force users to construct them. Instead, we should allow
-      //  users to pass the arguments they care about (e.g. paths, buckets, keys, etc.) and
-      //  construct the internal Druid confs ourselves.
       // HdfsStorageDruidModule.SCHEME is package-private, so we can't access it here
       DruidDataSourceOptionKeys.hdfsDeepStorageTypeKey -> (
         () =>
@@ -156,19 +149,13 @@ object SegmentWriterRegistry extends Logging {
           S3StorageDruidModule.SCHEME,
           (properties: Map[String, String]) => {
             new S3DataSegmentPusher(
-              MAPPER.readValue[ServerSideEncryptingAmazonS3](
-                properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3ServerSideEncryptionConfigKey)),
-                new TypeReference[ServerSideEncryptingAmazonS3] {}
-              ),
+              DeepStorageConstructorHelpers.createServerSideEncryptingAmazonS3(properties),
               DeepStorageConstructorHelpers.createS3DataSegmentPusherConfig(properties))
           },
           (dataSourceOptions: DataSourceOptions) => {
             val properties = dataSourceOptions.asMap().asScala.toMap
             new S3DataSegmentKiller(
-              MAPPER.readValue[ServerSideEncryptingAmazonS3](
-                dataSourceOptions.get(DruidDataSourceOptionKeys.s3ServerSideEncryptionConfigKey).get,
-                new TypeReference[ServerSideEncryptingAmazonS3] {}
-              ),
+              DeepStorageConstructorHelpers.createServerSideEncryptingAmazonS3(properties),
               DeepStorageConstructorHelpers.createS3DataSegmentPusherConfig(properties),
               DeepStorageConstructorHelpers.createS3InputDataConfig(properties)
             )
@@ -180,28 +167,19 @@ object SegmentWriterRegistry extends Logging {
         () => register(
           DruidDataSourceOptionKeys.googleDeepStorageTypeKey,
           (properties: Map[String, String]) => {
-            val accountConfig = DeepStorageConstructorHelpers.createGoogleAcountConfig(properties)
 
             new GoogleDataSegmentPusher(
-              MAPPER.readValue[GoogleStorage](
-                properties.get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.googleStorageConfigKey)).toString,
-                new TypeReference[GoogleStorage] {}
-              ),
-              accountConfig
+              DeepStorageConstructorHelpers.createGoogleStorage(properties),
+              DeepStorageConstructorHelpers.createGoogleAcountConfig(properties)
             )
           },
           (dataSourceOptions: DataSourceOptions) => {
             val properties = dataSourceOptions.asMap().asScala.toMap
-            val accountConfig = DeepStorageConstructorHelpers.createGoogleAcountConfig(properties)
-            val inputConfig = DeepStorageConstructorHelpers.createGoogleInputDataConfig(properties)
 
             new GoogleDataSegmentKiller(
-              MAPPER.readValue[GoogleStorage](
-                dataSourceOptions.get(DruidDataSourceOptionKeys.googleStorageConfigKey).get,
-                new TypeReference[GoogleStorage] {}
-              ),
-              accountConfig,
-              inputConfig
+              DeepStorageConstructorHelpers.createGoogleStorage(properties),
+              DeepStorageConstructorHelpers.createGoogleAcountConfig(properties),
+              DeepStorageConstructorHelpers.createGoogleInputDataConfig(properties)
             )
           }
         )

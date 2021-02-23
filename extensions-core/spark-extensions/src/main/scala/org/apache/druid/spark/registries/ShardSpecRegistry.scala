@@ -108,7 +108,7 @@ object ShardSpecRegistry extends Logging {
       // Staying away from functional programming of exceptions for more mutual intelligibility with Java
       if (!shardSpecClassToTypeNameMap.contains(clazz)) {
         throw new IAE(s"Unable to determine appropriate subtype for ShardSpec class ${clazz.toString}!" +
-          s" Has it been registered with Jackson?")
+          s" Has it been registered with either this registry or with Jackson?")
       }
       shardSpecClassToTypeNameMap(clazz)
     }

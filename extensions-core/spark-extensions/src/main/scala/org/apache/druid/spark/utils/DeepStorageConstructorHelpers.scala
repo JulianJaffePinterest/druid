@@ -19,15 +19,25 @@
 
 package org.apache.druid.spark.utils
 
+import com.fasterxml.jackson.core.`type`.TypeReference
+import com.fasterxml.jackson.databind.InjectableValues
 import com.microsoft.azure.storage.blob.{CloudBlobClient, ListBlobItem}
 import com.microsoft.azure.storage.{StorageCredentials, StorageUri}
+import org.apache.druid.common.aws.{AWSClientConfig, AWSCredentialsConfig, AWSEndpointConfig,
+  AWSModule, AWSProxyConfig}
+import org.apache.druid.common.gcp.GcpModule
 import org.apache.druid.java.util.common.{IAE, StringUtils}
+import org.apache.druid.metadata.{DefaultPasswordProvider, PasswordProvider}
+import org.apache.druid.spark.MAPPER
 import org.apache.druid.storage.azure.blob.{ListBlobItemHolder, ListBlobItemHolderFactory}
 import org.apache.druid.storage.azure.{AzureAccountConfig, AzureCloudBlobIterable,
   AzureCloudBlobIterableFactory, AzureCloudBlobIterator, AzureCloudBlobIteratorFactory,
   AzureDataSegmentConfig, AzureInputDataConfig, AzureStorage}
-import org.apache.druid.storage.google.{GoogleAccountConfig, GoogleInputDataConfig}
-import org.apache.druid.storage.s3.{S3DataSegmentPusherConfig, S3InputDataConfig}
+import org.apache.druid.storage.google.{GoogleAccountConfig, GoogleInputDataConfig, GoogleStorage,
+  GoogleStorageDruidModule}
+import org.apache.druid.storage.s3.{NoopServerSideEncryption, S3DataSegmentPusherConfig,
+  S3InputDataConfig, S3SSECustomConfig, S3SSEKmsConfig, S3StorageConfig, S3StorageDruidModule,
+  ServerSideEncryptingAmazonS3, ServerSideEncryption}
 import org.apache.hadoop.conf.Configuration
 
 import java.io.{ByteArrayInputStream, DataInputStream}
@@ -35,9 +45,14 @@ import java.lang.{Iterable => JIterable}
 import java.net.URI
 import scala.collection.JavaConverters.asJavaIterableConverter
 
+/**
+  * This is a nested cesspit of miserableness hacked together in the odd hours of the night. Hopefully as these helpers
+  * see actual use they can be refactored into a more decent approach.
+  */
 object DeepStorageConstructorHelpers extends TryWithResources {
 
   // HDFS Storage Helpers
+
   def createHadoopConfiguration(properties: Map[String, String]): Configuration = {
     val conf = new Configuration()
     val confByteStream = new ByteArrayInputStream(
@@ -61,6 +76,7 @@ object DeepStorageConstructorHelpers extends TryWithResources {
     val maxListingLength =
       properties.get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.maxListingLengthKey)).fold(1000)(_.toInt)
     // Although S3DataSegmentPusherConfig defaults to 1024, S3DataInputConfig requires maxListing length to be < 1000
+    // This is another reason to move to name-spaced config keys.
     if (maxListingLength < 1 || maxListingLength > 1000) {
       throw new IAE("maxListingLength must be between 1 and 1000!")
     }
@@ -80,6 +96,171 @@ object DeepStorageConstructorHelpers extends TryWithResources {
     inputDataConf
   }
 
+  /**
+    * No real clue if any of this or the sub-methods work ¯\_(ツ)_/¯
+    */
+  def createServerSideEncryptingAmazonS3(properties: Map[String, String]): ServerSideEncryptingAmazonS3 = {
+    // TODO: Build a small Configuration utils class to support diving into sub-configurations and then standardize
+    //  these property keys on the druid extensions props so that we can just pass the resulting sub-config into
+    //  MAPPER.convertValue()
+    val credentialsConfig = createAwsCredentialConfig(properties)
+
+    val proxyConfig = createAwsProxyConfig(properties)
+
+    val endpointConfig = createAwsEndpointConfig(properties)
+
+    val clientConfig = createAwsClientConfig(properties)
+
+    val s3StorageConfig = createS3StorageConfig(properties)
+
+    val awsModule = new AWSModule
+    val s3Module = new S3StorageDruidModule
+    val credentialsProvider = awsModule.getAWSCredentialsProvider(credentialsConfig)
+    s3Module.getAmazonS3Client(
+      s3Module.getServerSideEncryptingAmazonS3Builder(
+        credentialsProvider,
+        proxyConfig,
+        endpointConfig,
+        clientConfig,
+        s3StorageConfig
+      )
+    )
+  }
+
+  def createAwsCredentialConfig(properties: Map[String, String]): AWSCredentialsConfig = {
+    if (
+      properties.isDefinedAt(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3AwsCredentialsConfigKey))
+    ) {
+      MAPPER.readValue[AWSCredentialsConfig](
+        properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3AwsCredentialsConfigKey)),
+        new TypeReference[AWSCredentialsConfig] {}
+      )
+    } else {
+      val credentialsProps = Map[String, AnyRef](
+        "accessKey" ->
+          MAPPER.readValue[PasswordProvider](
+            properties.getOrElse(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3AccessKeyKey), ""),
+            new TypeReference[PasswordProvider] {}
+          ),
+        "secretKey" ->
+          MAPPER.readValue[PasswordProvider](
+            properties.getOrElse(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3SecretKeyKey), ""),
+            new TypeReference[PasswordProvider] {}
+          ),
+        "fileSessionCredentials" ->
+          properties.getOrElse(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3FileSessionCredentialsKey), "")
+      )
+      MAPPER.convertValue(credentialsProps, classOf[AWSCredentialsConfig])
+    }
+  }
+
+  def createAwsProxyConfig(properties: Map[String, String]): AWSProxyConfig = {
+    if (
+      properties.isDefinedAt(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3AwsProxyConfigKey))
+    ) {
+      MAPPER.readValue[AWSProxyConfig](
+        properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3AwsProxyConfigKey)),
+        new TypeReference[AWSProxyConfig] {}
+      )
+    } else {
+      val proxyProps = Map[String, AnyRef](
+        "host" -> properties.getOrElse(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3ProxyHostKey), ""),
+        "port" -> properties
+          .get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3ProxyPortKey))
+          .fold(-1)(_.toInt)
+          .asInstanceOf[Integer],
+        "username" -> properties.getOrElse(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3ProxyUserKey), ""),
+        "password" -> properties.getOrElse(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3ProxyPasswordKey), "")
+      )
+      MAPPER.convertValue(proxyProps, classOf[AWSProxyConfig])
+    }
+  }
+
+  def createAwsEndpointConfig(properties: Map[String, String]): AWSEndpointConfig = {
+    if (
+      properties.isDefinedAt(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3AwsEndpointConfigKey))
+    ) {
+      MAPPER.readValue[AWSEndpointConfig](
+        properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3AwsEndpointConfigKey)),
+        new TypeReference[AWSEndpointConfig] {}
+      )
+    } else {
+      val proxyProps = Map[String, AnyRef](
+        "url" -> properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3EndpointConfigUrlKey)),
+        "signingRegion" ->
+          properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3EndpointConfigSigningRegionKey))
+      )
+      MAPPER.convertValue(proxyProps, classOf[AWSEndpointConfig])
+    }
+  }
+
+  def createAwsClientConfig(properties: Map[String, String]): AWSClientConfig = {
+    if (
+      properties.isDefinedAt(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3AwsClientConfigKey))
+    ) {
+      MAPPER.readValue[AWSClientConfig](
+        properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3AwsClientConfigKey)),
+        new TypeReference[AWSClientConfig] {}
+      )
+    } else {
+      val proxyProps = Map[String, AnyRef](
+        "protocol" ->
+          properties.getOrElse(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3ClientConfigProtocolKey), "https"),
+        "disableChunkedEncoding" ->
+          properties.get(
+            StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3ClientConfigDisableChunkedEncodingKey)
+          ).fold(false)(_.toBoolean).asInstanceOf[java.lang.Boolean],
+        "enablePathStyleAccess" ->
+          properties.get(
+            StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3ClientConfigEnablePathStyleAccessKey)
+          ).fold(false)(_.toBoolean).asInstanceOf[java.lang.Boolean],
+        "forceGlobalBucketAccessEnabled" ->
+          properties.get(
+            StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3ClientConfigForceGlobalBucketAccessEnabledKey)
+          ).fold(false)(_.toBoolean).asInstanceOf[java.lang.Boolean]
+      )
+      MAPPER.convertValue(proxyProps, classOf[AWSClientConfig])
+    }
+  }
+
+  def createS3StorageConfig(properties: Map[String, String]): S3StorageConfig = {
+    if (
+      properties.isDefinedAt(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3StorageConfigKey))
+    ) {
+      MAPPER.readValue[S3StorageConfig](
+        properties(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3StorageConfigKey)),
+        new TypeReference[S3StorageConfig] {}
+      )
+    } else {
+      val storageConfigType = properties
+        .get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3ServerSideEncryptionTypeKey))
+      MAPPER.readValue[ServerSideEncryption]("s3", new TypeReference[ServerSideEncryption] {})
+      val serverSideEncryption = storageConfigType match {
+        case Some("s3") => MAPPER.readValue[ServerSideEncryption]("s3", new TypeReference[ServerSideEncryption] {})
+        case Some("kms") =>
+          val s3SseKmsConfig = MAPPER.convertValue(
+            Map[String, AnyRef](
+              "keyId" -> properties
+                .get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3ServerSideEncryptionKmsKeyIdKey))),
+            classOf[S3SSEKmsConfig]
+          )
+          MAPPER.setInjectableValues(new InjectableValues.Std().addValue(classOf[S3SSEKmsConfig], s3SseKmsConfig))
+          MAPPER.readValue[ServerSideEncryption]("kms", new TypeReference[ServerSideEncryption] {})
+        case Some("custom") =>
+          val s3SseCustomConfig = MAPPER.convertValue(
+            Map[String, AnyRef](
+              "base64EncodedKey" -> properties
+                .get(StringUtils.toLowerCase(DruidDataSourceOptionKeys.s3ServerSideEncryptionCustomKeyKey))),
+            classOf[S3SSECustomConfig]
+          )
+          MAPPER.setInjectableValues(new InjectableValues.Std().addValue(classOf[S3SSECustomConfig], s3SseCustomConfig))
+          MAPPER.readValue[ServerSideEncryption]("custom", new TypeReference[ServerSideEncryption] {})
+        case _ => new NoopServerSideEncryption
+      }
+      new S3StorageConfig(serverSideEncryption)
+    }
+  }
+
   // GCS Storage Helpers
 
   def createGoogleAcountConfig(properties: Map[String, String]): GoogleAccountConfig = {
@@ -97,6 +278,16 @@ object DeepStorageConstructorHelpers extends TryWithResources {
     val inputConfig = new GoogleInputDataConfig
     inputConfig.setMaxListingLength(maxListingLength)
     inputConfig
+  }
+
+  def createGoogleStorage(properties: Map[String, String]): GoogleStorage = {
+    val gcpModule = new GcpModule
+    val gcpStorageModule = new GoogleStorageDruidModule
+
+    val httpTransport = gcpModule.getHttpTransport
+    val jsonFactory = gcpModule.getJsonFactory
+    val requestInitializer = gcpModule.getHttpRequestInitializer(httpTransport, jsonFactory)
+    gcpStorageModule.getGoogleStorage(httpTransport, jsonFactory, requestInitializer)
   }
 
   // Azure Storage Helpers

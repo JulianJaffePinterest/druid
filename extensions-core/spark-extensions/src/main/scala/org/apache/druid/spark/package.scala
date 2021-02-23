@@ -19,7 +19,8 @@
 
 package org.apache.druid
 
-import com.fasterxml.jackson.databind.{InjectableValues, ObjectMapper}
+import com.fasterxml.jackson.databind.jsontype.NamedType
+import com.fasterxml.jackson.databind.{InjectableValues, Module, ObjectMapper}
 import org.apache.druid.jackson.DefaultObjectMapper
 import org.apache.druid.math.expr.ExprMacroTable
 import org.apache.druid.query.expression.{LikeExprMacro, RegexpExtractExprMacro,
@@ -32,7 +33,7 @@ import scala.collection.JavaConverters.seqAsJavaListConverter
 
 package object spark {
 
-  val MAPPER: ObjectMapper = new DefaultObjectMapper()
+  private[spark] val MAPPER: ObjectMapper = new DefaultObjectMapper()
 
   private val injectableValues: InjectableValues =
     new InjectableValues.Std()
@@ -55,6 +56,14 @@ package object spark {
 
   def serialize(obj: AnyRef): String = {
     MAPPER.writeValueAsString(obj)
+  }
+
+  def registerModules(modules: Module*): ObjectMapper = {
+    MAPPER.registerModules(modules: _*)
+  }
+
+  def registerSubType(subTypeClass: Class[_], name: String): Unit = {
+    MAPPER.registerSubtypes(new NamedType(subTypeClass, name))
   }
 }
 

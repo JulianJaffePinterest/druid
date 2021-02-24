@@ -20,7 +20,7 @@
 package org.apache.druid.spark.v2
 
 import org.apache.druid.spark.MAPPER
-import org.apache.druid.spark.utils.SerializableConfiguration
+import org.apache.druid.spark.utils.SerializableHadoopConfiguration
 import org.apache.druid.timeline.DataSegment
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
@@ -47,7 +47,7 @@ class DruidInputPartition(
   private val session = SparkSession.getActiveSession.get // We're running on the driver, it exists
   private val broadcastConf =
     session.sparkContext.broadcast(
-      new SerializableConfiguration(session.sparkContext.hadoopConfiguration))
+      new SerializableHadoopConfiguration(session.sparkContext.hadoopConfiguration))
   private val serializedSegment: String = MAPPER.writeValueAsString(segment)
 
   override def createPartitionReader(): InputPartitionReader[InternalRow] = {

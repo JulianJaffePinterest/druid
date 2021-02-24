@@ -22,7 +22,7 @@ package org.apache.druid.spark.v2
 import org.apache.druid.common.config.NullHandling
 import org.apache.druid.data.input.MapBasedInputRow
 import org.apache.druid.spark.SparkFunSuite
-import org.apache.druid.spark.utils.SerializableConfiguration
+import org.apache.druid.spark.utils.SerializableHadoopConfiguration
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.sources.{Filter, GreaterThanOrEqual, LessThan}
@@ -42,7 +42,7 @@ class DruidInputPartitionReaderSuite extends SparkFunSuite with Matchers with Be
       InternalRow.fromSeq(Seq(1577836800000L, List("dim2"), 1, 1, 2, 1, 4, 2, 5.1, 8.9, idOneSketch))
     )
     val conf =
-      sparkContext.broadcast(new SerializableConfiguration(sparkContext.hadoopConfiguration))
+      sparkContext.broadcast(new SerializableHadoopConfiguration(sparkContext.hadoopConfiguration))
     val partitionReader =
       new DruidInputPartitionReader(firstSegmentString, schema, Array.empty[Filter], columnTypes, conf)
 
@@ -58,7 +58,7 @@ class DruidInputPartitionReaderSuite extends SparkFunSuite with Matchers with Be
       InternalRow.fromSeq(Seq(1577836800000L, List("dim1"), 1, 1, 2, 1, 3, 1, 0.2, 0.0, idOneSketch))
     )
     val conf =
-      sparkContext.broadcast(new SerializableConfiguration(sparkContext.hadoopConfiguration))
+      sparkContext.broadcast(new SerializableHadoopConfiguration(sparkContext.hadoopConfiguration))
     val filter = LessThan("dim2", 2)
     val partitionReader =
       new DruidInputPartitionReader(secondSegmentString, schema, Array[Filter](filter), columnTypes, conf)
@@ -75,7 +75,7 @@ class DruidInputPartitionReaderSuite extends SparkFunSuite with Matchers with Be
       InternalRow.fromSeq(Seq(1577836800000L, List("dim2"), 2, 1, 2, 1, 1, 5, 8.0, 4.15, idOneSketch))
     )
     val conf =
-      sparkContext.broadcast(new SerializableConfiguration(sparkContext.hadoopConfiguration))
+      sparkContext.broadcast(new SerializableHadoopConfiguration(sparkContext.hadoopConfiguration))
     val filter = GreaterThanOrEqual("sum_metric4", 2)
     val partitionReader =
       new DruidInputPartitionReader(secondSegmentString, schema, Array[Filter](filter), columnTypes, conf)

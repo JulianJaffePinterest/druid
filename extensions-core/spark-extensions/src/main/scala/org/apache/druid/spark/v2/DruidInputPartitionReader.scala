@@ -32,7 +32,7 @@ import org.apache.druid.segment.realtime.firehose.{IngestSegmentFirehose, Window
 import org.apache.druid.segment.transform.TransformSpec
 import org.apache.druid.spark.MAPPER
 import org.apache.druid.spark.registries.{ComplexMetricRegistry, SegmentReaderRegistry}
-import org.apache.druid.spark.utils.{Logging, SerializableConfiguration}
+import org.apache.druid.spark.utils.{Logging, SerializableHadoopConfiguration}
 import org.apache.druid.timeline.DataSegment
 import org.apache.druid.utils.CompressionUtils
 import org.apache.hadoop.fs.Path
@@ -53,7 +53,7 @@ class DruidInputPartitionReader(segmentStr: String,
                                 schema: StructType,
                                 filters: Array[Filter],
                                 columnTypes: Option[Set[String]],
-                                broadcastedConf: Broadcast[SerializableConfiguration],
+                                broadcastedConf: Broadcast[SerializableHadoopConfiguration],
                                 useCompactSketches: Boolean = false
                                )
   extends InputPartitionReader[InternalRow] with Logging {

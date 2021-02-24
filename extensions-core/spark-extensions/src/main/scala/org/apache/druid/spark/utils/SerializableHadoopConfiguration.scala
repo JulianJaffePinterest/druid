@@ -31,7 +31,7 @@ import scala.util.control.NonFatal
   *
   * @param value Hadoop configuration
   */
-class SerializableConfiguration(@transient var value: Configuration) extends Serializable
+class SerializableHadoopConfiguration(@transient var value: Configuration) extends Serializable
   with Logging {
   private def writeObject(out: ObjectOutputStream): Unit = {
     try {
